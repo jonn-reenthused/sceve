@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Convert a restricted subset of C into l7801/l65 source (.l7801).
+Johnny Blanchard (Tonsomo Entertainment/RE:Enthused/Roguegunners Productions)
 
 The output targets BlockoS l65 tooling and is intended as a conservative
 starting point for SCV development.
+
+As a note, when I started making this, l65 was still in active development, i've just realised that the last update was 2 years ago.
+It should still be fine
 """
 
 from __future__ import annotations
