@@ -1,0 +1,629 @@
+require 'scv'
+location(0x8000, 0xFFFF)
+section{"rom", org=0x8000}
+    dc.b 'H'
+
+-- auto-allocated RAM symbols
+local scv_pad1_state = 0xFFA0
+local scv_pad2_state = 0xFFA1
+local scv_collision_result = 0xFFA2
+local main__last_p1_btn = 0xFFA3
+local main__last_p2_btn = 0xFFA4
+local main__p1_btn = 0xFFA5
+local main__p2_btn = 0xFFA6
+local scv_print_string__tmp_guard = 0xFFA7
+local scv_print_string__arg_x = 0xFFA8
+local scv_print_string__arg_y = 0xFFA9
+local scv_print_char__arg_row = 0xFFAA
+local scv_print_char__arg_col = 0xFFAB
+local scv_print_char__arg_ch = 0xFFAC
+local scv_print_string__arg_str = 0xFFAD
+
+-- ROM data blocks (const/static const arrays)
+-- label_p1_colon -> @label_p1_colon__rom (4 bytes)
+-- label_p2_colon -> @label_p2_colon__rom (4 bytes)
+
+@main
+    di
+    lxi sp,0xFFF0
+    ei
+    calt 0x8C
+    lxi hl,0x3400
+    mvi a,0xF4
+    staxi (hl)
+    mvi a,0x00
+    staxi (hl)
+    staxi (hl)
+    mvi a,0xF1
+    stax (hl)
+    call fn_main
+@halt_loop
+    jr halt_loop
+
+@fn_main
+    mvi a,0x00
+    mov (main__last_p1_btn),a
+    mvi a,0x00
+    mov (main__last_p2_btn),a
+    mvi a,0x00
+    mov (scv_print_string__arg_x),a
+    mvi a,0x00
+    mov (scv_print_string__arg_y),a
+    lxi de,label_p1_colon__rom
+    call fn_scv_print_string
+    mvi a,0x00
+    mov (scv_print_string__arg_x),a
+    mvi a,0x01
+    mov (scv_print_string__arg_y),a
+    lxi de,label_p2_colon__rom
+    call fn_scv_print_string
+@while_start_2
+    mvi a,0x01
+    eqi a,0
+    jr while_body_4
+    jmp while_end_3
+@while_body_4
+    call fn_scv_wait_vblank
+    call fn_scv_read_pad1
+    call fn_scv_read_pad2
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x04
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_6
+    jmp cmp_true_5
+@cmp_true_5
+    mvi a,0x01
+    jmp cmp_end_7
+@cmp_false_6
+    mvi a,0x00
+@cmp_end_7
+    mov (main__p1_btn),a
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x04
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_9
+    jmp cmp_true_8
+@cmp_true_8
+    mvi a,0x01
+    jmp cmp_end_10
+@cmp_false_9
+    mvi a,0x00
+@cmp_end_10
+    mov (main__p2_btn),a
+    mov a,(main__p1_btn)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_15
+    jmp cmp_true_14
+@cmp_true_14
+    mvi a,0x01
+    jmp cmp_end_16
+@cmp_false_15
+    mvi a,0x00
+@cmp_end_16
+    eqi a,0
+    jr if_true_13
+    jmp if_else_11
+@if_true_13
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x03
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_12
+@if_else_11
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x03
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_12
+    mov a,(main__p2_btn)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_21
+    jmp cmp_true_20
+@cmp_true_20
+    mvi a,0x01
+    jmp cmp_end_22
+@cmp_false_21
+    mvi a,0x00
+@cmp_end_22
+    eqi a,0
+    jr if_true_19
+    jmp if_else_17
+@if_true_19
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x03
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_18
+@if_else_17
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x03
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_18
+    mov a,(main__p1_btn)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_27
+    jmp cmp_true_26
+@cmp_true_26
+    mvi a,0x01
+    jmp cmp_end_28
+@cmp_false_27
+    mvi a,0x00
+@cmp_end_28
+    eqi a,0
+    jr if_true_25
+    jmp if_else_23
+@if_true_25
+    mov a,(main__last_p1_btn)
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_33
+    jmp cmp_true_32
+@cmp_true_32
+    mvi a,0x01
+    jmp cmp_end_34
+@cmp_false_33
+    mvi a,0x00
+@cmp_end_34
+    eqi a,0
+    jr if_true_31
+    jmp if_else_29
+@if_true_31
+    call fn_scv_asset_snd_tone_play
+    jmp if_end_30
+@if_else_29
+@if_end_30
+    jmp if_end_24
+@if_else_23
+@if_end_24
+    mov a,(main__p2_btn)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_39
+    jmp cmp_true_38
+@cmp_true_38
+    mvi a,0x01
+    jmp cmp_end_40
+@cmp_false_39
+    mvi a,0x00
+@cmp_end_40
+    eqi a,0
+    jr if_true_37
+    jmp if_else_35
+@if_true_37
+    mov a,(main__last_p2_btn)
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_45
+    jmp cmp_true_44
+@cmp_true_44
+    mvi a,0x01
+    jmp cmp_end_46
+@cmp_false_45
+    mvi a,0x00
+@cmp_end_46
+    eqi a,0
+    jr if_true_43
+    jmp if_else_41
+@if_true_43
+    call fn_scv_asset_snd_noise_play
+    jmp if_end_42
+@if_else_41
+@if_end_42
+    jmp if_end_36
+@if_else_35
+@if_end_36
+    mov a,(main__p1_btn)
+    mov (main__last_p1_btn),a
+    mov a,(main__p2_btn)
+    mov (main__last_p2_btn),a
+    jmp while_start_2
+@while_end_3
+@fn_main_end_1
+    ret
+
+-- *** stubs for extern functions — replace with real implementations ***
+
+@fn_scv_asset_snd_noise_play
+    lxi de,scv_asset_snd_noise_data
+    lxi hl,0x3600
+    di
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wv1
+    skit f2
+    jr scv_asset_snd_noise_play_wv1_wait
+    jmp scv_asset_snd_noise_play_wv1_done
+@scv_asset_snd_noise_play_wv1_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wv1
+    jmp scv_asset_snd_noise_play_wv1_done
+@scv_asset_snd_noise_play_wv1_done
+    skit f1
+    nop
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf0
+    skit f1
+    jr scv_asset_snd_noise_play_wf0_wait
+    jmp scv_asset_snd_noise_play_wf0_done
+@scv_asset_snd_noise_play_wf0_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf0
+    jmp scv_asset_snd_noise_play_wf0_done
+@scv_asset_snd_noise_play_wf0_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf1
+    skit f1
+    jr scv_asset_snd_noise_play_wf1_wait
+    jmp scv_asset_snd_noise_play_wf1_done
+@scv_asset_snd_noise_play_wf1_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf1
+    jmp scv_asset_snd_noise_play_wf1_done
+@scv_asset_snd_noise_play_wf1_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf2
+    skit f1
+    jr scv_asset_snd_noise_play_wf2_wait
+    jmp scv_asset_snd_noise_play_wf2_done
+@scv_asset_snd_noise_play_wf2_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf2
+    jmp scv_asset_snd_noise_play_wf2_done
+@scv_asset_snd_noise_play_wf2_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf3
+    skit f1
+    jr scv_asset_snd_noise_play_wf3_wait
+    jmp scv_asset_snd_noise_play_wf3_done
+@scv_asset_snd_noise_play_wf3_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf3
+    jmp scv_asset_snd_noise_play_wf3_done
+@scv_asset_snd_noise_play_wf3_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf4
+    skit f1
+    jr scv_asset_snd_noise_play_wf4_wait
+    jmp scv_asset_snd_noise_play_wf4_done
+@scv_asset_snd_noise_play_wf4_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf4
+    jmp scv_asset_snd_noise_play_wf4_done
+@scv_asset_snd_noise_play_wf4_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf5
+    skit f1
+    jr scv_asset_snd_noise_play_wf5_wait
+    jmp scv_asset_snd_noise_play_wf5_done
+@scv_asset_snd_noise_play_wf5_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf5
+    jmp scv_asset_snd_noise_play_wf5_done
+@scv_asset_snd_noise_play_wf5_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf6
+    skit f1
+    jr scv_asset_snd_noise_play_wf6_wait
+    jmp scv_asset_snd_noise_play_wf6_done
+@scv_asset_snd_noise_play_wf6_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf6
+    jmp scv_asset_snd_noise_play_wf6_done
+@scv_asset_snd_noise_play_wf6_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf7
+    skit f1
+    jr scv_asset_snd_noise_play_wf7_wait
+    jmp scv_asset_snd_noise_play_wf7_done
+@scv_asset_snd_noise_play_wf7_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf7
+    jmp scv_asset_snd_noise_play_wf7_done
+@scv_asset_snd_noise_play_wf7_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf8
+    skit f1
+    jr scv_asset_snd_noise_play_wf8_wait
+    jmp scv_asset_snd_noise_play_wf8_done
+@scv_asset_snd_noise_play_wf8_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf8
+    jmp scv_asset_snd_noise_play_wf8_done
+@scv_asset_snd_noise_play_wf8_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wf9
+    skit f1
+    jr scv_asset_snd_noise_play_wf9_wait
+    jmp scv_asset_snd_noise_play_wf9_done
+@scv_asset_snd_noise_play_wf9_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wf9
+    jmp scv_asset_snd_noise_play_wf9_done
+@scv_asset_snd_noise_play_wf9_done
+    ldax (de)
+    stax (hl)
+    mvi b,0xFF
+@scv_asset_snd_noise_play_wv2
+    skit f2
+    jr scv_asset_snd_noise_play_wv2_wait
+    jmp scv_asset_snd_noise_play_wv2_done
+@scv_asset_snd_noise_play_wv2_wait
+    dcr b
+    jre scv_asset_snd_noise_play_wv2
+    jmp scv_asset_snd_noise_play_wv2_done
+@scv_asset_snd_noise_play_wv2_done
+    ei
+    ret
+
+@fn_scv_asset_snd_tone_play
+    lxi de,scv_asset_snd_tone_data
+    lxi hl,0x3600
+    di
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wv1
+    skit f2
+    jr scv_asset_snd_tone_play_wv1_wait
+    jmp scv_asset_snd_tone_play_wv1_done
+@scv_asset_snd_tone_play_wv1_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wv1
+    jmp scv_asset_snd_tone_play_wv1_done
+@scv_asset_snd_tone_play_wv1_done
+    skit f1
+    nop
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wf0
+    skit f1
+    jr scv_asset_snd_tone_play_wf0_wait
+    jmp scv_asset_snd_tone_play_wf0_done
+@scv_asset_snd_tone_play_wf0_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wf0
+    jmp scv_asset_snd_tone_play_wf0_done
+@scv_asset_snd_tone_play_wf0_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wf1
+    skit f1
+    jr scv_asset_snd_tone_play_wf1_wait
+    jmp scv_asset_snd_tone_play_wf1_done
+@scv_asset_snd_tone_play_wf1_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wf1
+    jmp scv_asset_snd_tone_play_wf1_done
+@scv_asset_snd_tone_play_wf1_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wf2
+    skit f1
+    jr scv_asset_snd_tone_play_wf2_wait
+    jmp scv_asset_snd_tone_play_wf2_done
+@scv_asset_snd_tone_play_wf2_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wf2
+    jmp scv_asset_snd_tone_play_wf2_done
+@scv_asset_snd_tone_play_wf2_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wf3
+    skit f1
+    jr scv_asset_snd_tone_play_wf3_wait
+    jmp scv_asset_snd_tone_play_wf3_done
+@scv_asset_snd_tone_play_wf3_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wf3
+    jmp scv_asset_snd_tone_play_wf3_done
+@scv_asset_snd_tone_play_wf3_done
+    ldax (de)
+    stax (hl)
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wv2
+    skit f2
+    jr scv_asset_snd_tone_play_wv2_wait
+    jmp scv_asset_snd_tone_play_wv2_done
+@scv_asset_snd_tone_play_wv2_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wv2
+    jmp scv_asset_snd_tone_play_wv2_done
+@scv_asset_snd_tone_play_wv2_done
+    ei
+    ret
+
+-- scv_print_char: arg row arrives in (scv_print_char__arg_row)
+-- scv_print_char: arg col arrives in (scv_print_char__arg_col)
+-- scv_print_char: arg ch arrives in (scv_print_char__arg_ch)
+@fn_scv_print_char
+    mvi h,0x30
+    mvi l,0x40
+    mov b,(scv_print_char__arg_row)
+@scv_print_char_row_loop
+    mov a,b
+    nei a,0
+    jr scv_print_char_col_step
+    adi l,0x20
+    aci h,0
+    dcr b
+    jre scv_print_char_row_loop
+@scv_print_char_col_step
+    mov a,(scv_print_char__arg_col)
+    adi a,0x03
+    add l,a
+    aci h,0
+    mov a,(scv_print_char__arg_ch)
+    stax (hl)
+    ret
+
+-- scv_print_string: arg x arrives in (scv_print_string__arg_x)
+-- scv_print_string: arg y arrives in (scv_print_string__arg_y)
+-- scv_print_string: arg str arrives in (scv_print_string__arg_str)
+@fn_scv_print_string
+    mvi a,0x20
+    mov (scv_print_string__tmp_guard),a
+@scv_print_string_loop
+    mov a,(scv_print_string__tmp_guard)
+    eqi a,0
+    skz
+    jmp scv_print_string_check_char
+    ret
+@scv_print_string_check_char
+    ldax (de)
+    mov b,a
+    eqi a,0
+    skz
+    jmp scv_print_string_print_char
+    ret
+@scv_print_string_print_char
+    mov a,b
+    mov (scv_print_char__arg_ch),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    call fn_scv_print_char
+    inx de
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__tmp_guard)
+    adi a,0xFF
+    mov (scv_print_string__tmp_guard),a
+    jmp scv_print_string_loop
+
+@fn_scv_read_pad1
+    mvi a,0xFD
+    mov pa,a
+    nop
+    mov a,pb
+    mov a,pb
+    mov (scv_pad1_state),a
+    ret
+
+@fn_scv_read_pad2
+    mvi a,0xFE
+    mov pa,a
+    nop
+    mov a,pb
+    mov a,pb
+    mov (scv_pad2_state),a
+    ret
+
+@fn_scv_wait_vblank
+@scv_wait_vblank_wait
+    skit f2
+    jr scv_wait_vblank_wait
+    ret
+
+-- Sound asset data
+
+-- sound tone snd_tone
+@scv_asset_snd_tone_data
+    dc.b 0x02, 0x02, 0x80, 0xE0, 0x1F
+
+-- sound noise snd_noise
+@scv_asset_snd_noise_data
+    dc.b 0x01, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01, 0x04, 0x08, 0x10, 0x20
+
+-- C const/static const ROM data
+
+-- label_p1_colon
+@label_p1_colon__rom
+    dc.b 0x50, 0x31, 0x3A, 0x00
+
+-- label_p2_colon
+@label_p2_colon__rom
+    dc.b 0x50, 0x32, 0x3A, 0x00
+
+
+writebin(filename .. '.bin')

@@ -1,0 +1,421 @@
+require 'scv'
+location(0x8000, 0xFFFF)
+section{"rom", org=0x8000}
+    dc.b 'H'
+
+-- auto-allocated RAM symbols
+local scv_pad1_state = 0xFFA0
+local scv_pad2_state = 0xFFA1
+local scv_collision_result = 0xFFA2
+local main__x = 0xFFA3
+local main__y = 0xFFA4
+local main__frame = 0xFFA5
+local main__tx = 0xFFA6
+local main__ty = 0xFFA7
+local scv_print_string__tmp_guard = 0xFFA8
+local scv_print_string__arg_x = 0xFFA9
+local scv_print_string__arg_y = 0xFFAA
+local scv_draw_bg_tile__arg_row = 0xFFAB
+local scv_draw_bg_tile__arg_col = 0xFFAC
+local scv_draw_bg_tile__arg_tile_id = 0xFFAD
+local scv_set_bg_scroll__arg_scroll_x = 0xFFAE
+local scv_set_bg_scroll__arg_scroll_y = 0xFFAF
+local scv_draw_bg_tile_scrolled__arg_row = 0xFFB0
+local scv_draw_bg_tile_scrolled__arg_col = 0xFFB1
+local scv_draw_bg_tile_scrolled__arg_tile_id = 0xFFB2
+local scv_bg_scroll_x = 0xFFB3
+local scv_bg_scroll_y = 0xFFB4
+local scv_print_char__arg_row = 0xFFB5
+local scv_print_char__arg_col = 0xFFB6
+local scv_print_char__arg_ch = 0xFFB7
+local scv_print_string__arg_str = 0xFFB8
+
+-- ROM data blocks (const/static const arrays)
+-- title_bg_scrl -> @title_bg_scrl__rom (8 bytes)
+
+@main
+    di
+    lxi sp,0xFFF0
+    ei
+    calt 0x8C
+    lxi hl,0x3400
+    mvi a,0xF4
+    staxi (hl)
+    mvi a,0x00
+    staxi (hl)
+    staxi (hl)
+    mvi a,0xF1
+    stax (hl)
+    call fn_main
+@halt_loop
+    jr halt_loop
+
+@fn_main
+    mvi a,0x00
+    mov (main__x),a
+    mvi a,0x00
+    mov (main__y),a
+    mvi a,0x00
+    mov (main__frame),a
+    mvi a,0x00
+    mov (scv_print_string__arg_x),a
+    mvi a,0x00
+    mov (scv_print_string__arg_y),a
+    lxi de,title_bg_scrl__rom
+    call fn_scv_print_string
+    mvi a,0x00
+    mov (main__ty),a
+@while_start_2
+    mov a,(main__ty)
+    mov b,a
+    mvi a,0x0C
+    mov c,a
+    mov a,b
+    sub a,c
+    mov a,c
+    sub a,b
+    gti a,0
+    jr cmp_false_6
+    jmp cmp_true_5
+@cmp_true_5
+    mvi a,0x01
+    jmp cmp_end_7
+@cmp_false_6
+    mvi a,0x00
+@cmp_end_7
+    eqi a,0
+    jr while_body_4
+    jmp while_end_3
+@while_body_4
+    mvi a,0x00
+    mov (main__tx),a
+@while_start_8
+    mov a,(main__tx)
+    mov b,a
+    mvi a,0x20
+    mov c,a
+    mov a,b
+    sub a,c
+    mov a,c
+    sub a,b
+    gti a,0
+    jr cmp_false_12
+    jmp cmp_true_11
+@cmp_true_11
+    mvi a,0x01
+    jmp cmp_end_13
+@cmp_false_12
+    mvi a,0x00
+@cmp_end_13
+    eqi a,0
+    jr while_body_10
+    jmp while_end_9
+@while_body_10
+    mov a,(main__ty)
+    mov (scv_draw_bg_tile__arg_row),a
+    mov a,(main__tx)
+    mov (scv_draw_bg_tile__arg_col),a
+    mvi a,0x40
+    mov b,a
+    mov a,(main__tx)
+    mov b,a
+    mov a,(main__ty)
+    add a,b
+    mov b,a
+    mvi a,0x3F
+    ana a,b
+    add a,b
+    mov (scv_draw_bg_tile__arg_tile_id),a
+    call fn_scv_draw_bg_tile
+    mov a,(main__tx)
+    mov b,a
+    mvi a,0x01
+    add a,b
+    mov (main__tx),a
+    jmp while_start_8
+@while_end_9
+    mov a,(main__ty)
+    mov b,a
+    mvi a,0x01
+    add a,b
+    mov (main__ty),a
+    jmp while_start_2
+@while_end_3
+@while_start_14
+    mvi a,0x01
+    eqi a,0
+    jr while_body_16
+    jmp while_end_15
+@while_body_16
+    call fn_scv_wait_vblank
+    mov a,(main__frame)
+    mov b,a
+    mvi a,0x01
+    add a,b
+    mov (main__frame),a
+    mov a,(main__frame)
+    mov b,a
+    mvi a,0x03
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_21
+    jmp cmp_true_20
+@cmp_true_20
+    mvi a,0x01
+    jmp cmp_end_22
+@cmp_false_21
+    mvi a,0x00
+@cmp_end_22
+    eqi a,0
+    jr if_true_19
+    jmp if_else_17
+@if_true_19
+    mov a,(main__x)
+    mov b,a
+    mvi a,0x01
+    add a,b
+    mov (main__x),a
+    jmp if_end_18
+@if_else_17
+@if_end_18
+    mov a,(main__frame)
+    mov b,a
+    mvi a,0x07
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_27
+    jmp cmp_true_26
+@cmp_true_26
+    mvi a,0x01
+    jmp cmp_end_28
+@cmp_false_27
+    mvi a,0x00
+@cmp_end_28
+    eqi a,0
+    jr if_true_25
+    jmp if_else_23
+@if_true_25
+    mov a,(main__y)
+    mov b,a
+    mvi a,0x01
+    add a,b
+    mov (main__y),a
+    jmp if_end_24
+@if_else_23
+@if_end_24
+    mov a,(main__x)
+    mov (scv_set_bg_scroll__arg_scroll_x),a
+    mov a,(main__y)
+    mov (scv_set_bg_scroll__arg_scroll_y),a
+    call fn_scv_set_bg_scroll
+    mvi a,0x05
+    mov (scv_draw_bg_tile_scrolled__arg_row),a
+    mvi a,0x0F
+    mov (scv_draw_bg_tile_scrolled__arg_col),a
+    mvi a,0x7F
+    mov (scv_draw_bg_tile_scrolled__arg_tile_id),a
+    call fn_scv_draw_bg_tile_scrolled
+    mvi a,0x06
+    mov (scv_draw_bg_tile_scrolled__arg_row),a
+    mvi a,0x0F
+    mov (scv_draw_bg_tile_scrolled__arg_col),a
+    mvi a,0x5F
+    mov (scv_draw_bg_tile_scrolled__arg_tile_id),a
+    call fn_scv_draw_bg_tile_scrolled
+    jmp while_start_14
+@while_end_15
+@fn_main_end_1
+    ret
+
+-- *** stubs for extern functions — replace with real implementations ***
+
+-- scv_draw_bg_tile: arg row arrives in (scv_draw_bg_tile__arg_row)
+-- scv_draw_bg_tile: arg col arrives in (scv_draw_bg_tile__arg_col)
+-- scv_draw_bg_tile: arg tile_id arrives in (scv_draw_bg_tile__arg_tile_id)
+@fn_scv_draw_bg_tile
+    mvi h,0x30
+    mvi l,0x40
+    mov b,(scv_draw_bg_tile__arg_row)
+@scv_draw_bg_tile_row_loop
+    mov a,b
+    nei a,0
+    jr scv_draw_bg_tile_col_step
+    adi l,0x20
+    aci h,0
+    dcr b
+    jre scv_draw_bg_tile_row_loop
+@scv_draw_bg_tile_col_step
+    mov a,(scv_draw_bg_tile__arg_col)
+    adi a,0x03
+    add l,a
+    aci h,0
+    mov a,(scv_draw_bg_tile__arg_tile_id)
+    ani a,0x3F
+    stax (hl)
+    ret
+
+-- scv_draw_bg_tile_scrolled: arg row arrives in (scv_draw_bg_tile_scrolled__arg_row)
+-- scv_draw_bg_tile_scrolled: arg col arrives in (scv_draw_bg_tile_scrolled__arg_col)
+-- scv_draw_bg_tile_scrolled: arg tile_id arrives in (scv_draw_bg_tile_scrolled__arg_tile_id)
+@fn_scv_draw_bg_tile_scrolled
+    mov a,(scv_draw_bg_tile_scrolled__arg_row)
+    mov c,a
+    mov a,(scv_bg_scroll_y)
+    add a,c
+    mov c,a
+@scv_draw_bg_tile_scrolled_wrap_row
+    mov a,c
+    mvi b,0x0C
+    sub a,b
+    skc
+    jmp scv_draw_bg_tile_scrolled_wrap_row_apply
+    jmp scv_draw_bg_tile_scrolled_row_done
+@scv_draw_bg_tile_scrolled_wrap_row_apply
+    mov c,a
+    jmp scv_draw_bg_tile_scrolled_wrap_row
+@scv_draw_bg_tile_scrolled_row_done
+    mvi h,0x30
+    mvi l,0x40
+    mov a,c
+    mov b,a
+@scv_draw_bg_tile_scrolled_row_loop
+    mov a,b
+    nei a,0
+    jr scv_draw_bg_tile_scrolled_col_step
+    adi l,0x20
+    aci h,0
+    dcr b
+    jre scv_draw_bg_tile_scrolled_row_loop
+@scv_draw_bg_tile_scrolled_col_step
+    mov a,(scv_draw_bg_tile_scrolled__arg_col)
+    mov b,a
+    mov a,(scv_bg_scroll_x)
+    add a,b
+    mov b,a
+@scv_draw_bg_tile_scrolled_addr_wrap_col
+    mov a,b
+    mvi c,0x20
+    sub a,c
+    skc
+    jmp scv_draw_bg_tile_scrolled_addr_wrap_col_apply
+    jmp scv_draw_bg_tile_scrolled_addr_col_done
+@scv_draw_bg_tile_scrolled_addr_wrap_col_apply
+    mov b,a
+    jmp scv_draw_bg_tile_scrolled_addr_wrap_col
+@scv_draw_bg_tile_scrolled_addr_col_done
+    mov a,b
+    adi a,0x03
+    add l,a
+    aci h,0
+    mov a,(scv_draw_bg_tile_scrolled__arg_tile_id)
+    ani a,0x3F
+    stax (hl)
+    ret
+
+-- scv_print_char: arg row arrives in (scv_print_char__arg_row)
+-- scv_print_char: arg col arrives in (scv_print_char__arg_col)
+-- scv_print_char: arg ch arrives in (scv_print_char__arg_ch)
+@fn_scv_print_char
+    mvi h,0x30
+    mvi l,0x40
+    mov b,(scv_print_char__arg_row)
+@scv_print_char_row_loop
+    mov a,b
+    nei a,0
+    jr scv_print_char_col_step
+    adi l,0x20
+    aci h,0
+    dcr b
+    jre scv_print_char_row_loop
+@scv_print_char_col_step
+    mov a,(scv_print_char__arg_col)
+    adi a,0x03
+    add l,a
+    aci h,0
+    mov a,(scv_print_char__arg_ch)
+    stax (hl)
+    ret
+
+-- scv_print_string: arg x arrives in (scv_print_string__arg_x)
+-- scv_print_string: arg y arrives in (scv_print_string__arg_y)
+-- scv_print_string: arg str arrives in (scv_print_string__arg_str)
+@fn_scv_print_string
+    mvi a,0x20
+    mov (scv_print_string__tmp_guard),a
+@scv_print_string_loop
+    mov a,(scv_print_string__tmp_guard)
+    eqi a,0
+    skz
+    jmp scv_print_string_check_char
+    ret
+@scv_print_string_check_char
+    ldax (de)
+    mov b,a
+    eqi a,0
+    skz
+    jmp scv_print_string_print_char
+    ret
+@scv_print_string_print_char
+    mov a,b
+    mov (scv_print_char__arg_ch),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    call fn_scv_print_char
+    inx de
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__tmp_guard)
+    adi a,0xFF
+    mov (scv_print_string__tmp_guard),a
+    jmp scv_print_string_loop
+
+-- scv_set_bg_scroll: arg scroll_x arrives in (scv_set_bg_scroll__arg_scroll_x)
+-- scv_set_bg_scroll: arg scroll_y arrives in (scv_set_bg_scroll__arg_scroll_y)
+@fn_scv_set_bg_scroll
+    mov a,(scv_set_bg_scroll__arg_scroll_x)
+    ani a,0x1F
+    mov (scv_bg_scroll_x),a
+    mov a,(scv_set_bg_scroll__arg_scroll_y)
+    mov c,a
+@scv_set_bg_scroll_wrap_y
+    mov a,c
+    mvi b,0x0C
+    sub a,b
+    skc
+    jmp scv_set_bg_scroll_wrap_y_apply
+    jmp scv_set_bg_scroll_wrap_y_done
+@scv_set_bg_scroll_wrap_y_apply
+    mov c,a
+    jmp scv_set_bg_scroll_wrap_y
+@scv_set_bg_scroll_wrap_y_done
+    mov a,c
+    mov (scv_bg_scroll_y),a
+    ret
+
+@fn_scv_wait_vblank
+@scv_wait_vblank_wait
+    skit f2
+    jr scv_wait_vblank_wait
+    ret
+
+-- C const/static const ROM data
+
+-- title_bg_scrl
+@title_bg_scrl__rom
+    dc.b 0x42, 0x47, 0x20, 0x53, 0x43, 0x52, 0x4C, 0x00
+
+
+writebin(filename .. '.bin')

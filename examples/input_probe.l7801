@@ -1,0 +1,873 @@
+require 'scv'
+location(0x8000, 0xFFFF)
+section{"rom", org=0x8000}
+    dc.b 'H'
+
+-- auto-allocated RAM symbols
+local scv_pad1_state = 0xFFA0
+local scv_pad2_state = 0xFFA1
+local scv_collision_result = 0xFFA2
+local line_p1__ram_0 = 0xFFA3
+local line_p1__ram_1 = 0xFFA4
+local line_p1__ram_2 = 0xFFA5
+local line_p1__ram_3 = 0xFFA6
+local line_p1__ram_4 = 0xFFA7
+local line_p1__ram_5 = 0xFFA8
+local line_p1__ram_6 = 0xFFA9
+local line_p1__ram_7 = 0xFFAA
+local line_p1__ram_8 = 0xFFAB
+local line_p1__ram_9 = 0xFFAC
+local line_p1__ram_10 = 0xFFAD
+local line_p1__ram_11 = 0xFFAE
+local line_p2__ram_0 = 0xFFAF
+local line_p2__ram_1 = 0xFFB0
+local line_p2__ram_2 = 0xFFB1
+local line_p2__ram_3 = 0xFFB2
+local line_p2__ram_4 = 0xFFB3
+local line_p2__ram_5 = 0xFFB4
+local line_p2__ram_6 = 0xFFB5
+local line_p2__ram_7 = 0xFFB6
+local line_p2__ram_8 = 0xFFB7
+local line_p2__ram_9 = 0xFFB8
+local line_p2__ram_10 = 0xFFB9
+local line_p2__ram_11 = 0xFFBA
+local main__title_len = 0xFFBB
+local scv_print_string__tmp_guard = 0xFFBC
+local scv_print_string__arg_x = 0xFFBD
+local scv_print_string__arg_y = 0xFFBE
+local scv_print_char__arg_row = 0xFFBF
+local scv_print_char__arg_col = 0xFFC0
+local scv_print_char__arg_ch = 0xFFC1
+local sprintf__arg_value = 0xFFC2
+local scv_print_string__arg_str = 0xFFC3
+local sprintf__arg_dst = 0xFFC4
+local sprintf__arg_fmt = 0xFFC5
+local sprintf__tmp_count = 0xFFC6
+local sprintf__tmp_rem = 0xFFC7
+local sprintf__tmp_hundreds = 0xFFC8
+local sprintf__tmp_tens = 0xFFC9
+local sprintf__tmp_started = 0xFFCA
+local strlen__arg_str = 0xFFCB
+
+-- ROM data blocks (const/static const arrays)
+-- label_p1 -> @label_p1__rom (3 bytes)
+-- label_p2 -> @label_p2__rom (3 bytes)
+-- fmt_pad -> @fmt_pad__rom (7 bytes)
+
+@main
+    di
+    lxi sp,0xFFF0
+    ei
+    calt 0x8C
+    lxi hl,0x3400
+    mvi a,0xF4
+    staxi (hl)
+    mvi a,0x00
+    staxi (hl)
+    staxi (hl)
+    mvi a,0xF1
+    stax (hl)
+    call fn_main
+@halt_loop
+    jr halt_loop
+
+@fn_main
+    mvi a,0x02
+    mov (scv_print_string__arg_x),a
+    mvi a,0x02
+    mov (scv_print_string__arg_y),a
+    lxi de,label_p1__rom
+    call fn_scv_print_string
+    mvi a,0x02
+    mov (scv_print_string__arg_x),a
+    mvi a,0x03
+    mov (scv_print_string__arg_y),a
+    lxi de,label_p2__rom
+    call fn_scv_print_string
+    mvi a,0x02
+    mov (main__title_len),a
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x02
+    mov b,a
+    mov a,(main__title_len)
+    add a,b
+    mov (scv_print_char__arg_col),a
+    mvi a,0x3A
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x02
+    mov b,a
+    mov a,(main__title_len)
+    add a,b
+    mov (scv_print_char__arg_col),a
+    mvi a,0x3A
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@while_start_2
+    mvi a,0x01
+    eqi a,0
+    jr while_body_4
+    jmp while_end_3
+@while_body_4
+    call fn_scv_wait_vblank
+    call fn_scv_read_pad1
+    call fn_scv_read_pad2
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x01
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_9
+    jmp cmp_true_8
+@cmp_true_8
+    mvi a,0x01
+    jmp cmp_end_10
+@cmp_false_9
+    mvi a,0x00
+@cmp_end_10
+    eqi a,0
+    jr if_true_7
+    jmp if_else_5
+@if_true_7
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4C
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_6
+@if_else_5
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_6
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x02
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_15
+    jmp cmp_true_14
+@cmp_true_14
+    mvi a,0x01
+    jmp cmp_end_16
+@cmp_false_15
+    mvi a,0x00
+@cmp_end_16
+    eqi a,0
+    jr if_true_13
+    jmp if_else_11
+@if_true_13
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x55
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_12
+@if_else_11
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_12
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x02
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_21
+    jmp cmp_true_20
+@cmp_true_20
+    mvi a,0x01
+    jmp cmp_end_22
+@cmp_false_21
+    mvi a,0x00
+@cmp_end_22
+    eqi a,0
+    jr if_true_19
+    jmp if_else_17
+@if_true_19
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x08
+    mov (scv_print_char__arg_col),a
+    mvi a,0x52
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_18
+@if_else_17
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x08
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_18
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x01
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_27
+    jmp cmp_true_26
+@cmp_true_26
+    mvi a,0x01
+    jmp cmp_end_28
+@cmp_false_27
+    mvi a,0x00
+@cmp_end_28
+    eqi a,0
+    jr if_true_25
+    jmp if_else_23
+@if_true_25
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x44
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_24
+@if_else_23
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_24
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x04
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_33
+    jmp cmp_true_32
+@cmp_true_32
+    mvi a,0x01
+    jmp cmp_end_34
+@cmp_false_33
+    mvi a,0x00
+@cmp_end_34
+    eqi a,0
+    jr if_true_31
+    jmp if_else_29
+@if_true_31
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0A
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_30
+@if_else_29
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0A
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_30
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x04
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_39
+    jmp cmp_true_38
+@cmp_true_38
+    mvi a,0x01
+    jmp cmp_end_40
+@cmp_false_39
+    mvi a,0x00
+@cmp_end_40
+    eqi a,0
+    jr if_true_37
+    jmp if_else_35
+@if_true_37
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0B
+    mov (scv_print_char__arg_col),a
+    mvi a,0x32
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_36
+@if_else_35
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0B
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_36
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x08
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_45
+    jmp cmp_true_44
+@cmp_true_44
+    mvi a,0x01
+    jmp cmp_end_46
+@cmp_false_45
+    mvi a,0x00
+@cmp_end_46
+    eqi a,0
+    jr if_true_43
+    jmp if_else_41
+@if_true_43
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4C
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_42
+@if_else_41
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_42
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x10
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_51
+    jmp cmp_true_50
+@cmp_true_50
+    mvi a,0x01
+    jmp cmp_end_52
+@cmp_false_51
+    mvi a,0x00
+@cmp_end_52
+    eqi a,0
+    jr if_true_49
+    jmp if_else_47
+@if_true_49
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x55
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_48
+@if_else_47
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_48
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x10
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_57
+    jmp cmp_true_56
+@cmp_true_56
+    mvi a,0x01
+    jmp cmp_end_58
+@cmp_false_57
+    mvi a,0x00
+@cmp_end_58
+    eqi a,0
+    jr if_true_55
+    jmp if_else_53
+@if_true_55
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x08
+    mov (scv_print_char__arg_col),a
+    mvi a,0x52
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_54
+@if_else_53
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x08
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_54
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x08
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_63
+    jmp cmp_true_62
+@cmp_true_62
+    mvi a,0x01
+    jmp cmp_end_64
+@cmp_false_63
+    mvi a,0x00
+@cmp_end_64
+    eqi a,0
+    jr if_true_61
+    jmp if_else_59
+@if_true_61
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x44
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_60
+@if_else_59
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_60
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x20
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_69
+    jmp cmp_true_68
+@cmp_true_68
+    mvi a,0x01
+    jmp cmp_end_70
+@cmp_false_69
+    mvi a,0x00
+@cmp_end_70
+    eqi a,0
+    jr if_true_67
+    jmp if_else_65
+@if_true_67
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0A
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_66
+@if_else_65
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0A
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_66
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x20
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_75
+    jmp cmp_true_74
+@cmp_true_74
+    mvi a,0x01
+    jmp cmp_end_76
+@cmp_false_75
+    mvi a,0x00
+@cmp_end_76
+    eqi a,0
+    jr if_true_73
+    jmp if_else_71
+@if_true_73
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0B
+    mov (scv_print_char__arg_col),a
+    mvi a,0x32
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_72
+@if_else_71
+    mvi a,0x03
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0B
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_72
+    mov a,(scv_pad1_state)
+    mov (sprintf__arg_value),a
+    lxi de,line_p1__ram_0
+    lxi hl,fmt_pad__rom
+    call fn_sprintf
+    mov a,(scv_pad2_state)
+    mov (sprintf__arg_value),a
+    lxi de,line_p2__ram_0
+    lxi hl,fmt_pad__rom
+    call fn_sprintf
+    mvi a,0x0A
+    mov (scv_print_string__arg_x),a
+    mvi a,0x02
+    mov (scv_print_string__arg_y),a
+    lxi de,line_p1__ram_0
+    call fn_scv_print_string
+    mvi a,0x0A
+    mov (scv_print_string__arg_x),a
+    mvi a,0x03
+    mov (scv_print_string__arg_y),a
+    lxi de,line_p2__ram_0
+    call fn_scv_print_string
+    jmp while_start_2
+@while_end_3
+@fn_main_end_1
+    ret
+
+-- *** stubs for extern functions — replace with real implementations ***
+
+-- scv_print_char: arg row arrives in (scv_print_char__arg_row)
+-- scv_print_char: arg col arrives in (scv_print_char__arg_col)
+-- scv_print_char: arg ch arrives in (scv_print_char__arg_ch)
+@fn_scv_print_char
+    mvi h,0x30
+    mvi l,0x40
+    mov b,(scv_print_char__arg_row)
+@scv_print_char_row_loop
+    mov a,b
+    nei a,0
+    jr scv_print_char_col_step
+    adi l,0x20
+    aci h,0
+    dcr b
+    jre scv_print_char_row_loop
+@scv_print_char_col_step
+    mov a,(scv_print_char__arg_col)
+    adi a,0x03
+    add l,a
+    aci h,0
+    mov a,(scv_print_char__arg_ch)
+    stax (hl)
+    ret
+
+-- scv_print_string: arg x arrives in (scv_print_string__arg_x)
+-- scv_print_string: arg y arrives in (scv_print_string__arg_y)
+-- scv_print_string: arg str arrives in (scv_print_string__arg_str)
+@fn_scv_print_string
+    mvi a,0x20
+    mov (scv_print_string__tmp_guard),a
+@scv_print_string_loop
+    mov a,(scv_print_string__tmp_guard)
+    eqi a,0
+    skz
+    jmp scv_print_string_check_char
+    ret
+@scv_print_string_check_char
+    ldax (de)
+    mov b,a
+    eqi a,0
+    skz
+    jmp scv_print_string_print_char
+    ret
+@scv_print_string_print_char
+    mov a,b
+    mov (scv_print_char__arg_ch),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    call fn_scv_print_char
+    inx de
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__tmp_guard)
+    adi a,0xFF
+    mov (scv_print_string__tmp_guard),a
+    jmp scv_print_string_loop
+
+@fn_scv_read_pad1
+    mvi a,0xFD
+    mov pa,a
+    nop
+    mov a,pb
+    mov a,pb
+    mov (scv_pad1_state),a
+    ret
+
+@fn_scv_read_pad2
+    mvi a,0xFE
+    mov pa,a
+    nop
+    mov a,pb
+    mov a,pb
+    mov (scv_pad2_state),a
+    ret
+
+@fn_scv_wait_vblank
+@scv_wait_vblank_wait
+    skit f2
+    jr scv_wait_vblank_wait
+    ret
+
+-- sprintf: arg dst arrives in (sprintf__arg_dst)
+-- sprintf: arg fmt arrives in (sprintf__arg_fmt)
+-- sprintf: arg value arrives in (sprintf__arg_value)
+@fn_sprintf
+    mvi a,0x00
+    mov (sprintf__tmp_count),a
+@sprintf_loop
+    ldaxi (hl)
+    eqi a,0
+    skz
+    jmp sprintf_loop_continue
+    mvi a,0x00
+    stax (de)
+    mov a,(sprintf__tmp_count)
+    ret
+@sprintf_loop_continue
+    eqi a,0x25
+    skz
+    jmp sprintf_not_percent
+    jmp sprintf_handle_percent
+@sprintf_not_percent
+    ldaxi (hl)
+    stax (de)
+    inx de
+    mov a,(sprintf__tmp_count)
+    adi a,0x01
+    mov (sprintf__tmp_count),a
+    jmp sprintf_loop
+@sprintf_handle_percent
+    ldaxi (hl)
+    eqi a,0
+    skz
+    jmp sprintf_check_percent_code
+    mvi a,0x00
+    stax (de)
+    mov a,(sprintf__tmp_count)
+    ret
+@sprintf_check_percent_code
+    eqi a,0x25
+    skz
+    jmp sprintf_check_format_code
+    mvi a,0x25
+    stax (de)
+    inx de
+    mov a,(sprintf__tmp_count)
+    adi a,0x01
+    mov (sprintf__tmp_count),a
+    inx hl
+    jmp sprintf_loop
+@sprintf_check_format_code
+    eqi a,0x64
+    skz
+    jmp sprintf_check_unsigned_fmt
+    jmp sprintf_emit_decimal
+@sprintf_check_unsigned_fmt
+    eqi a,0x75
+    skz
+    jmp sprintf_unknown_format
+    jmp sprintf_emit_decimal
+@sprintf_unknown_format
+    mvi a,0x3F
+    stax (de)
+    inx de
+    mov a,(sprintf__tmp_count)
+    adi a,0x01
+    mov (sprintf__tmp_count),a
+    jmp sprintf_loop
+@sprintf_emit_decimal
+    mov a,(sprintf__arg_value)
+    mov (sprintf__tmp_rem),a
+    mvi a,0x00
+    mov (sprintf__tmp_hundreds),a
+    mov (sprintf__tmp_tens),a
+    mov (sprintf__tmp_started),a
+@sprintf_hundreds_loop
+    mov a,(sprintf__tmp_rem)
+    mvi b,0x64
+    sub a,b
+    skc
+    jmp sprintf_hundreds_apply
+    jmp sprintf_hundreds_done
+@sprintf_hundreds_apply
+    mov (sprintf__tmp_rem),a
+    mov a,(sprintf__tmp_hundreds)
+    adi a,0x01
+    mov (sprintf__tmp_hundreds),a
+    jmp sprintf_hundreds_loop
+@sprintf_hundreds_done
+@sprintf_tens_loop
+    mov a,(sprintf__tmp_rem)
+    mvi b,0x0A
+    sub a,b
+    skc
+    jmp sprintf_tens_apply
+    jmp sprintf_tens_done
+@sprintf_tens_apply
+    mov (sprintf__tmp_rem),a
+    mov a,(sprintf__tmp_tens)
+    adi a,0x01
+    mov (sprintf__tmp_tens),a
+    jmp sprintf_tens_loop
+@sprintf_tens_done
+    mov a,(sprintf__tmp_hundreds)
+    eqi a,0
+    skz
+    jmp sprintf_skip_hundreds
+    mov a,(sprintf__tmp_hundreds)
+    adi a,0x30
+    stax (de)
+    inx de
+    mov a,(sprintf__tmp_count)
+    adi a,0x01
+    mov (sprintf__tmp_count),a
+    mvi a,0x01
+    mov (sprintf__tmp_started),a
+@sprintf_skip_hundreds
+    mov a,(sprintf__tmp_started)
+    eqi a,0
+    skz
+    jmp sprintf_emit_tens_check
+    mov a,(sprintf__tmp_tens)
+    eqi a,0
+    skz
+    jmp sprintf_skip_tens
+@sprintf_emit_tens_check
+    mov a,(sprintf__tmp_tens)
+    adi a,0x30
+    stax (de)
+    inx de
+    mov a,(sprintf__tmp_count)
+    adi a,0x01
+    mov (sprintf__tmp_count),a
+@sprintf_skip_tens
+    mov a,(sprintf__tmp_rem)
+    adi a,0x30
+    stax (de)
+    inx de
+    mov a,(sprintf__tmp_count)
+    adi a,0x01
+    mov (sprintf__tmp_count),a
+    jmp sprintf_loop
+
+-- strlen: arg str arrives in (strlen__arg_str)
+@fn_strlen
+    mvi b,0x00
+@strlen_loop
+    ldax (de)
+    eqi a,0
+    skz
+    jmp strlen_continue_strlen
+    mov a,b
+    ret
+@strlen_continue_strlen
+    inx de
+    mov a,b
+    adi a,0x01
+    mov b,a
+    jmp strlen_loop
+
+-- C const/static const ROM data
+
+-- label_p1
+@label_p1__rom
+    dc.b 0x50, 0x31, 0x00
+
+-- label_p2
+@label_p2__rom
+    dc.b 0x50, 0x32, 0x00
+
+-- fmt_pad
+@fmt_pad__rom
+    dc.b 0x52, 0x41, 0x57, 0x3D, 0x25, 0x75, 0x00
+
+
+writebin(filename .. '.bin')

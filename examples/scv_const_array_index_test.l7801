@@ -1,0 +1,180 @@
+require 'scv'
+location(0x8000, 0xFFFF)
+section{"rom", org=0x8000}
+    dc.b 'H'
+
+-- auto-allocated RAM symbols
+local scv_pad1_state = 0xFFA0
+local scv_pad2_state = 0xFFA1
+local scv_collision_result = 0xFFA2
+local main__idx = 0xFFA3
+local main__value = 0xFFA4
+local scv_print_string__tmp_guard = 0xFFA5
+local scv_print_string__arg_x = 0xFFA6
+local scv_print_string__arg_y = 0xFFA7
+local scv_print_char__arg_row = 0xFFA8
+local scv_print_char__arg_col = 0xFFA9
+local scv_print_char__arg_ch = 0xFFAA
+local scv_print_string__arg_str = 0xFFAB
+
+-- ROM data blocks (const/static const arrays)
+-- palette_lut -> @palette_lut__rom (8 bytes)
+-- label_idx -> @label_idx__rom (7 bytes)
+-- label_value -> @label_value__rom (3 bytes)
+
+@main
+    di
+    lxi sp,0xFFF0
+    ei
+    calt 0x8C
+    lxi hl,0x3400
+    mvi a,0xF4
+    staxi (hl)
+    mvi a,0x00
+    staxi (hl)
+    staxi (hl)
+    mvi a,0xF1
+    stax (hl)
+    call fn_main
+@halt_loop
+    jr halt_loop
+
+@fn_main
+    mvi a,0x06
+    mov (main__idx),a
+    mov a,(main__idx)
+    mov b,a
+    lxi hl,palette_lut__rom
+    mov a,b
+    add l,a
+    aci h,0
+    ldax (hl)
+    mov (main__value),a
+    mvi a,0x00
+    mov (scv_print_string__arg_x),a
+    mvi a,0x00
+    mov (scv_print_string__arg_y),a
+    lxi de,label_idx__rom
+    call fn_scv_print_string
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov b,a
+    mov a,(main__idx)
+    add a,b
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x04
+    mov (scv_print_string__arg_x),a
+    mvi a,0x01
+    mov (scv_print_string__arg_y),a
+    lxi de,label_value__rom
+    call fn_scv_print_string
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov b,a
+    mov a,(main__value)
+    add a,b
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@while_start_2
+    mvi a,0x01
+    eqi a,0
+    jr while_body_4
+    jmp while_end_3
+@while_body_4
+    call fn_scv_wait_vblank
+    jmp while_start_2
+@while_end_3
+@fn_main_end_1
+    ret
+
+-- *** stubs for extern functions — replace with real implementations ***
+
+-- scv_print_char: arg row arrives in (scv_print_char__arg_row)
+-- scv_print_char: arg col arrives in (scv_print_char__arg_col)
+-- scv_print_char: arg ch arrives in (scv_print_char__arg_ch)
+@fn_scv_print_char
+    mvi h,0x30
+    mvi l,0x40
+    mov b,(scv_print_char__arg_row)
+@scv_print_char_row_loop
+    mov a,b
+    nei a,0
+    jr scv_print_char_col_step
+    adi l,0x20
+    aci h,0
+    dcr b
+    jre scv_print_char_row_loop
+@scv_print_char_col_step
+    mov a,(scv_print_char__arg_col)
+    adi a,0x03
+    add l,a
+    aci h,0
+    mov a,(scv_print_char__arg_ch)
+    stax (hl)
+    ret
+
+-- scv_print_string: arg x arrives in (scv_print_string__arg_x)
+-- scv_print_string: arg y arrives in (scv_print_string__arg_y)
+-- scv_print_string: arg str arrives in (scv_print_string__arg_str)
+@fn_scv_print_string
+    mvi a,0x20
+    mov (scv_print_string__tmp_guard),a
+@scv_print_string_loop
+    mov a,(scv_print_string__tmp_guard)
+    eqi a,0
+    skz
+    jmp scv_print_string_check_char
+    ret
+@scv_print_string_check_char
+    ldax (de)
+    mov b,a
+    eqi a,0
+    skz
+    jmp scv_print_string_print_char
+    ret
+@scv_print_string_print_char
+    mov a,b
+    mov (scv_print_char__arg_ch),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    call fn_scv_print_char
+    inx de
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__tmp_guard)
+    adi a,0xFF
+    mov (scv_print_string__tmp_guard),a
+    jmp scv_print_string_loop
+
+@fn_scv_wait_vblank
+@scv_wait_vblank_wait
+    skit f2
+    jr scv_wait_vblank_wait
+    ret
+
+-- C const/static const ROM data
+
+-- palette_lut
+@palette_lut__rom
+    dc.b 0x02, 0x04, 0x06, 0x08, 0x01, 0x03, 0x05, 0x07
+
+-- label_idx
+@label_idx__rom
+    dc.b 0x49, 0x44, 0x58, 0x20, 0x49, 0x3D, 0x00
+
+-- label_value
+@label_value__rom
+    dc.b 0x56, 0x3D, 0x00
+
+
+writebin(filename .. '.bin')

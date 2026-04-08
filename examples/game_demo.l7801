@@ -1,0 +1,2055 @@
+require 'scv'
+location(0x8000, 0xFFFF)
+section{"rom", org=0x8000}
+    dc.b 'H'
+
+-- auto-allocated RAM symbols
+local scv_pad1_state = 0xFFA0
+local scv_pad2_state = 0xFFA1
+local scv_collision_result = 0xFFA2
+local main__s1_x = 0xFFA3
+local main__s1_y = 0xFFA4
+local main__enemy_frame = 0xFFA5
+local main__enemy_tick = 0xFFA6
+local main__y_dbg = 0xFFA7
+local main__any_btn = 0xFFA8
+local main__last_any_btn = 0xFFA9
+local main__p2_btn = 0xFFAA
+local main__p1_btn = 0xFFAB
+local main__up = 0xFFAC
+local main__down = 0xFFAD
+local main__left = 0xFFAE
+local main__right = 0xFFAF
+local scv_print_string__tmp_guard = 0xFFB0
+local scv_print_string__arg_x = 0xFFB1
+local scv_print_string__arg_y = 0xFFB2
+local scv_print_char__arg_row = 0xFFB3
+local scv_print_char__arg_col = 0xFFB4
+local scv_print_char__arg_ch = 0xFFB5
+local scv_asset__arg_pattern_slot = 0xFFB6
+local scv_set_hw_sprite__arg_id = 0xFFB7
+local scv_set_hw_sprite__arg_x = 0xFFB8
+local scv_set_hw_sprite__arg_y = 0xFFB9
+local scv_set_hw_sprite__arg_pattern = 0xFFBA
+local scv_set_hw_sprite__arg_color = 0xFFBB
+local scv_set_hw_sprite_anim__arg_id = 0xFFBC
+local scv_set_hw_sprite_anim__arg_x = 0xFFBD
+local scv_set_hw_sprite_anim__arg_y = 0xFFBE
+local scv_set_hw_sprite_anim__arg_base_pattern = 0xFFBF
+local scv_set_hw_sprite_anim__arg_frame = 0xFFC0
+local scv_set_hw_sprite_anim__arg_color = 0xFFC1
+local scv_set_hw_sprite_frame__arg_id = 0xFFC2
+local scv_set_hw_sprite_frame__arg_base_pattern = 0xFFC3
+local scv_set_hw_sprite_frame__arg_frame = 0xFFC4
+local scv_move_hw_sprite_left__arg_id = 0xFFC5
+local scv_move_hw_sprite_left__arg_step = 0xFFC6
+local scv_move_hw_sprite_left__arg_min_x = 0xFFC7
+local scv_move_hw_sprite_right__arg_id = 0xFFC8
+local scv_move_hw_sprite_right__arg_step = 0xFFC9
+local scv_move_hw_sprite_right__arg_max_x = 0xFFCA
+local scv_move_hw_sprite_up__arg_id = 0xFFCB
+local scv_move_hw_sprite_up__arg_step = 0xFFCC
+local scv_move_hw_sprite_up__arg_min_y = 0xFFCD
+local scv_move_hw_sprite_down__arg_id = 0xFFCE
+local scv_move_hw_sprite_down__arg_step = 0xFFCF
+local scv_move_hw_sprite_down__arg_max_y = 0xFFD0
+local scv_get_hw_sprite_y__arg_id = 0xFFD1
+local scv_print_string__arg_str = 0xFFD2
+
+@main
+    di
+    lxi sp,0xFFF0
+    ei
+    calt 0x8C
+    lxi hl,0x3400
+    mvi a,0xF4
+    staxi (hl)
+    mvi a,0x00
+    staxi (hl)
+    staxi (hl)
+    mvi a,0xF1
+    stax (hl)
+    call fn_main
+@halt_loop
+    jr halt_loop
+
+@fn_main
+    mvi a,0x00
+    mov (main__any_btn),a
+    mvi a,0x00
+    mov (main__last_any_btn),a
+    mvi a,0x00
+    mov (main__p2_btn),a
+    mvi a,0x00
+    mov (main__p1_btn),a
+    mvi a,0x00
+    mov (main__up),a
+    mvi a,0x00
+    mov (main__down),a
+    mvi a,0x00
+    mov (main__left),a
+    mvi a,0x00
+    mov (main__right),a
+    mvi a,0x70
+    mov (main__s1_x),a
+    mvi a,0x50
+    mov (main__s1_y),a
+    mvi a,0x00
+    mov (main__enemy_frame),a
+    mvi a,0x00
+    mov (main__enemy_tick),a
+    mvi a,0x0B
+    mov (scv_print_string__arg_x),a
+    mvi a,0x00
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x53
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x43
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x56
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x20
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x53
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x44
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4B
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mvi a,0x0C
+    mov (scv_print_string__arg_x),a
+    mvi a,0x00
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x54
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4F
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x53
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4F
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4D
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4F
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x04
+    mov (scv_print_char__arg_col),a
+    mvi a,0x59
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x05
+    mov (scv_print_char__arg_col),a
+    mvi a,0x3A
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0F
+    mov (scv_print_char__arg_col),a
+    mvi a,0x55
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x10
+    mov (scv_print_char__arg_col),a
+    mvi a,0x3A
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x12
+    mov (scv_print_char__arg_col),a
+    mvi a,0x44
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x13
+    mov (scv_print_char__arg_col),a
+    mvi a,0x3A
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x05
+    mov (scv_print_char__arg_row),a
+    mvi a,0x03
+    mov (scv_print_char__arg_col),a
+    mvi a,0x40
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x03
+    mov (scv_print_char__arg_col),a
+    mvi a,0x44
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x04
+    mov (scv_print_char__arg_col),a
+    mvi a,0x52
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x05
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4C
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x55
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x42
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x08
+    mov (scv_print_char__arg_col),a
+    mvi a,0x32
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x42
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0A
+    mov (scv_print_char__arg_col),a
+    mvi a,0x32
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (scv_asset__arg_pattern_slot),a
+    call fn_scv_asset_player_load
+    mvi a,0x01
+    mov (scv_asset__arg_pattern_slot),a
+    call fn_scv_asset_enemy_0_load
+    mvi a,0x02
+    mov (scv_asset__arg_pattern_slot),a
+    call fn_scv_asset_enemy_1_load
+    mvi a,0x03
+    mov (scv_asset__arg_pattern_slot),a
+    call fn_scv_asset_enemy_2_load
+    mvi a,0x04
+    mov (scv_asset__arg_pattern_slot),a
+    call fn_scv_asset_enemy_3_load
+    mvi a,0x00
+    mov (scv_set_hw_sprite__arg_id),a
+    mvi a,0x40
+    mov (scv_set_hw_sprite__arg_x),a
+    mvi a,0x50
+    mov (scv_set_hw_sprite__arg_y),a
+    mvi a,0x00
+    mov (scv_set_hw_sprite__arg_pattern),a
+    mvi a,0x0F
+    mov (scv_set_hw_sprite__arg_color),a
+    call fn_scv_set_hw_sprite
+    mvi a,0x01
+    mov (scv_set_hw_sprite_anim__arg_id),a
+    mov a,(main__s1_x)
+    mov (scv_set_hw_sprite_anim__arg_x),a
+    mov a,(main__s1_y)
+    mov (scv_set_hw_sprite_anim__arg_y),a
+    mvi a,0x01
+    mov (scv_set_hw_sprite_anim__arg_base_pattern),a
+    mov a,(main__enemy_frame)
+    mov (scv_set_hw_sprite_anim__arg_frame),a
+    mvi a,0x0C
+    mov (scv_set_hw_sprite_anim__arg_color),a
+    call fn_scv_set_hw_sprite_anim
+@while_start_2
+    mvi a,0x01
+    eqi a,0
+    jr while_body_4
+    jmp while_end_3
+@while_body_4
+    call fn_scv_wait_vblank
+    call fn_scv_read_pad1
+    call fn_scv_read_pad2
+    mov a,(main__enemy_tick)
+    mov b,a
+    mvi a,0x01
+    add a,b
+    mov (main__enemy_tick),a
+    mov a,(main__enemy_tick)
+    mov b,a
+    mvi a,0x14
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_9
+    jmp cmp_true_8
+@cmp_true_8
+    mvi a,0x01
+    jmp cmp_end_10
+@cmp_false_9
+    mvi a,0x00
+@cmp_end_10
+    eqi a,0
+    jr if_true_7
+    jmp if_else_5
+@if_true_7
+    mvi a,0x00
+    mov (main__enemy_tick),a
+    mov a,(main__enemy_frame)
+    mov b,a
+    mvi a,0x01
+    add a,b
+    mov (main__enemy_frame),a
+    mov a,(main__enemy_frame)
+    mov b,a
+    mvi a,0x04
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_15
+    jmp cmp_true_14
+@cmp_true_14
+    mvi a,0x01
+    jmp cmp_end_16
+@cmp_false_15
+    mvi a,0x00
+@cmp_end_16
+    eqi a,0
+    jr if_true_13
+    jmp if_else_11
+@if_true_13
+    mvi a,0x00
+    mov (main__enemy_frame),a
+    jmp if_end_12
+@if_else_11
+@if_end_12
+    mvi a,0x01
+    mov (scv_set_hw_sprite_frame__arg_id),a
+    mvi a,0x01
+    mov (scv_set_hw_sprite_frame__arg_base_pattern),a
+    mov a,(main__enemy_frame)
+    mov (scv_set_hw_sprite_frame__arg_frame),a
+    call fn_scv_set_hw_sprite_frame
+    jmp if_end_6
+@if_else_5
+@if_end_6
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x01
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_21
+    jmp cmp_true_20
+@cmp_true_20
+    mvi a,0x01
+    jmp cmp_end_22
+@cmp_false_21
+    mvi a,0x00
+@cmp_end_22
+    eqi a,0
+    jr if_true_19
+    jmp if_else_17
+@if_true_19
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x03
+    mov (scv_print_char__arg_col),a
+    mvi a,0x44
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (main__down),a
+    jmp if_end_18
+@if_else_17
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x03
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (main__down),a
+@if_end_18
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x02
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_27
+    jmp cmp_true_26
+@cmp_true_26
+    mvi a,0x01
+    jmp cmp_end_28
+@cmp_false_27
+    mvi a,0x00
+@cmp_end_28
+    eqi a,0
+    jr if_true_25
+    jmp if_else_23
+@if_true_25
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x04
+    mov (scv_print_char__arg_col),a
+    mvi a,0x52
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (main__right),a
+    jmp if_end_24
+@if_else_23
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x04
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (main__right),a
+@if_end_24
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x01
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_33
+    jmp cmp_true_32
+@cmp_true_32
+    mvi a,0x01
+    jmp cmp_end_34
+@cmp_false_33
+    mvi a,0x00
+@cmp_end_34
+    eqi a,0
+    jr if_true_31
+    jmp if_else_29
+@if_true_31
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x05
+    mov (scv_print_char__arg_col),a
+    mvi a,0x4C
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (main__left),a
+    jmp if_end_30
+@if_else_29
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x05
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (main__left),a
+@if_end_30
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x02
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_39
+    jmp cmp_true_38
+@cmp_true_38
+    mvi a,0x01
+    jmp cmp_end_40
+@cmp_false_39
+    mvi a,0x00
+@cmp_end_40
+    eqi a,0
+    jr if_true_37
+    jmp if_else_35
+@if_true_37
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x55
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (main__up),a
+    jmp if_end_36
+@if_else_35
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (main__up),a
+@if_end_36
+    mov a,(scv_pad2_state)
+    mov b,a
+    mvi a,0x04
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_45
+    jmp cmp_true_44
+@cmp_true_44
+    mvi a,0x01
+    jmp cmp_end_46
+@cmp_false_45
+    mvi a,0x00
+@cmp_end_46
+    eqi a,0
+    jr if_true_43
+    jmp if_else_41
+@if_true_43
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x42
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (main__p2_btn),a
+    jmp if_end_42
+@if_else_41
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (main__p2_btn),a
+@if_end_42
+    mov a,(scv_pad1_state)
+    mov b,a
+    mvi a,0x04
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_51
+    jmp cmp_true_50
+@cmp_true_50
+    mvi a,0x01
+    jmp cmp_end_52
+@cmp_false_51
+    mvi a,0x00
+@cmp_end_52
+    eqi a,0
+    jr if_true_49
+    jmp if_else_47
+@if_true_49
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x42
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x01
+    mov (main__p1_btn),a
+    jmp if_end_48
+@if_else_47
+    mvi a,0x02
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x2E
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    mvi a,0x00
+    mov (main__p1_btn),a
+@if_end_48
+    mov a,(main__p2_btn)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_57
+    jmp cmp_true_56
+@cmp_true_56
+    mvi a,0x01
+    jmp cmp_end_58
+@cmp_false_57
+    mvi a,0x00
+@cmp_end_58
+    eqi a,0
+    jr if_true_55
+    jmp if_else_53
+@if_true_55
+    mvi a,0x01
+    mov (main__any_btn),a
+    jmp if_end_54
+@if_else_53
+    mov a,(main__p1_btn)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_63
+    jmp cmp_true_62
+@cmp_true_62
+    mvi a,0x01
+    jmp cmp_end_64
+@cmp_false_63
+    mvi a,0x00
+@cmp_end_64
+    eqi a,0
+    jr if_true_61
+    jmp if_else_59
+@if_true_61
+    mvi a,0x01
+    mov (main__any_btn),a
+    jmp if_end_60
+@if_else_59
+    mvi a,0x00
+    mov (main__any_btn),a
+@if_end_60
+@if_end_54
+    mov a,(main__any_btn)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_69
+    jmp cmp_true_68
+@cmp_true_68
+    mvi a,0x01
+    jmp cmp_end_70
+@cmp_false_69
+    mvi a,0x00
+@cmp_end_70
+    eqi a,0
+    jr if_true_67
+    jmp if_else_65
+@if_true_67
+    mov a,(main__last_any_btn)
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_75
+    jmp cmp_true_74
+@cmp_true_74
+    mvi a,0x01
+    jmp cmp_end_76
+@cmp_false_75
+    mvi a,0x00
+@cmp_end_76
+    eqi a,0
+    jr if_true_73
+    jmp if_else_71
+@if_true_73
+    call fn_scv_asset_snd_tone_play
+    jmp if_end_72
+@if_else_71
+@if_end_72
+    jmp if_end_66
+@if_else_65
+    mov a,(main__last_any_btn)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_81
+    jmp cmp_true_80
+@cmp_true_80
+    mvi a,0x01
+    jmp cmp_end_82
+@cmp_false_81
+    mvi a,0x00
+@cmp_end_82
+    eqi a,0
+    jr if_true_79
+    jmp if_else_77
+@if_true_79
+    call fn_scv_stop_sound
+    jmp if_end_78
+@if_else_77
+@if_end_78
+@if_end_66
+    mov a,(main__any_btn)
+    mov (main__last_any_btn),a
+    mov a,(main__left)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_87
+    jmp cmp_true_86
+@cmp_true_86
+    mvi a,0x01
+    jmp cmp_end_88
+@cmp_false_87
+    mvi a,0x00
+@cmp_end_88
+    eqi a,0
+    jr if_true_85
+    jmp if_else_83
+@if_true_85
+    mvi a,0x00
+    mov (scv_move_hw_sprite_left__arg_id),a
+    mvi a,0x02
+    mov (scv_move_hw_sprite_left__arg_step),a
+    mvi a,0x08
+    mov (scv_move_hw_sprite_left__arg_min_x),a
+    call fn_scv_move_hw_sprite_left
+    jmp if_end_84
+@if_else_83
+@if_end_84
+    mov a,(main__right)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_93
+    jmp cmp_true_92
+@cmp_true_92
+    mvi a,0x01
+    jmp cmp_end_94
+@cmp_false_93
+    mvi a,0x00
+@cmp_end_94
+    eqi a,0
+    jr if_true_91
+    jmp if_else_89
+@if_true_91
+    mvi a,0x00
+    mov (scv_move_hw_sprite_right__arg_id),a
+    mvi a,0x02
+    mov (scv_move_hw_sprite_right__arg_step),a
+    mvi a,0xCC
+    mov (scv_move_hw_sprite_right__arg_max_x),a
+    call fn_scv_move_hw_sprite_right
+    jmp if_end_90
+@if_else_89
+@if_end_90
+    mov a,(main__up)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_99
+    jmp cmp_true_98
+@cmp_true_98
+    mvi a,0x01
+    jmp cmp_end_100
+@cmp_false_99
+    mvi a,0x00
+@cmp_end_100
+    eqi a,0
+    jr if_true_97
+    jmp if_else_95
+@if_true_97
+    mvi a,0x00
+    mov (scv_move_hw_sprite_up__arg_id),a
+    mvi a,0x02
+    mov (scv_move_hw_sprite_up__arg_step),a
+    mvi a,0x10
+    mov (scv_move_hw_sprite_up__arg_min_y),a
+    call fn_scv_move_hw_sprite_up
+    jmp if_end_96
+@if_else_95
+@if_end_96
+    mov a,(main__down)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_105
+    jmp cmp_true_104
+@cmp_true_104
+    mvi a,0x01
+    jmp cmp_end_106
+@cmp_false_105
+    mvi a,0x00
+@cmp_end_106
+    eqi a,0
+    jr if_true_103
+    jmp if_else_101
+@if_true_103
+    mvi a,0x00
+    mov (scv_move_hw_sprite_down__arg_id),a
+    mvi a,0x02
+    mov (scv_move_hw_sprite_down__arg_step),a
+    mvi a,0xCC
+    mov (scv_move_hw_sprite_down__arg_max_y),a
+    call fn_scv_move_hw_sprite_down
+    jmp if_end_102
+@if_else_101
+@if_end_102
+    mvi a,0x00
+    mov (scv_get_hw_sprite_y__arg_id),a
+    call fn_scv_get_hw_sprite_y
+    mov (main__y_dbg),a
+    mov a,(main__y_dbg)
+    mov b,a
+    mvi a,0x80
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_111
+    jmp cmp_true_110
+@cmp_true_110
+    mvi a,0x01
+    jmp cmp_end_112
+@cmp_false_111
+    mvi a,0x00
+@cmp_end_112
+    eqi a,0
+    jr if_true_109
+    jmp if_else_107
+@if_true_109
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_108
+@if_else_107
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x06
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_108
+    mov a,(main__y_dbg)
+    mov b,a
+    mvi a,0x40
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_117
+    jmp cmp_true_116
+@cmp_true_116
+    mvi a,0x01
+    jmp cmp_end_118
+@cmp_false_117
+    mvi a,0x00
+@cmp_end_118
+    eqi a,0
+    jr if_true_115
+    jmp if_else_113
+@if_true_115
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_114
+@if_else_113
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x07
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_114
+    mov a,(main__y_dbg)
+    mov b,a
+    mvi a,0x20
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_123
+    jmp cmp_true_122
+@cmp_true_122
+    mvi a,0x01
+    jmp cmp_end_124
+@cmp_false_123
+    mvi a,0x00
+@cmp_end_124
+    eqi a,0
+    jr if_true_121
+    jmp if_else_119
+@if_true_121
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x08
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_120
+@if_else_119
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x08
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_120
+    mov a,(main__y_dbg)
+    mov b,a
+    mvi a,0x10
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_129
+    jmp cmp_true_128
+@cmp_true_128
+    mvi a,0x01
+    jmp cmp_end_130
+@cmp_false_129
+    mvi a,0x00
+@cmp_end_130
+    eqi a,0
+    jr if_true_127
+    jmp if_else_125
+@if_true_127
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_126
+@if_else_125
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x09
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_126
+    mov a,(main__y_dbg)
+    mov b,a
+    mvi a,0x08
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_135
+    jmp cmp_true_134
+@cmp_true_134
+    mvi a,0x01
+    jmp cmp_end_136
+@cmp_false_135
+    mvi a,0x00
+@cmp_end_136
+    eqi a,0
+    jr if_true_133
+    jmp if_else_131
+@if_true_133
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0A
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_132
+@if_else_131
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0A
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_132
+    mov a,(main__y_dbg)
+    mov b,a
+    mvi a,0x04
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_141
+    jmp cmp_true_140
+@cmp_true_140
+    mvi a,0x01
+    jmp cmp_end_142
+@cmp_false_141
+    mvi a,0x00
+@cmp_end_142
+    eqi a,0
+    jr if_true_139
+    jmp if_else_137
+@if_true_139
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0B
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_138
+@if_else_137
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0B
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_138
+    mov a,(main__y_dbg)
+    mov b,a
+    mvi a,0x02
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_147
+    jmp cmp_true_146
+@cmp_true_146
+    mvi a,0x01
+    jmp cmp_end_148
+@cmp_false_147
+    mvi a,0x00
+@cmp_end_148
+    eqi a,0
+    jr if_true_145
+    jmp if_else_143
+@if_true_145
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0C
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_144
+@if_else_143
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0C
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_144
+    mov a,(main__y_dbg)
+    mov b,a
+    mvi a,0x01
+    ana a,b
+    mov b,a
+    mvi a,0x00
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_153
+    jmp cmp_true_152
+@cmp_true_152
+    mvi a,0x01
+    jmp cmp_end_154
+@cmp_false_153
+    mvi a,0x00
+@cmp_end_154
+    eqi a,0
+    jr if_true_151
+    jmp if_else_149
+@if_true_151
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0D
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_150
+@if_else_149
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x0D
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_150
+    mov a,(main__up)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_159
+    jmp cmp_true_158
+@cmp_true_158
+    mvi a,0x01
+    jmp cmp_end_160
+@cmp_false_159
+    mvi a,0x00
+@cmp_end_160
+    eqi a,0
+    jr if_true_157
+    jmp if_else_155
+@if_true_157
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x11
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_156
+@if_else_155
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x11
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_156
+    mov a,(main__down)
+    mov b,a
+    mvi a,0x01
+    mov c,a
+    mov a,b
+    sub a,c
+    eqi a,0
+    jr cmp_false_165
+    jmp cmp_true_164
+@cmp_true_164
+    mvi a,0x01
+    jmp cmp_end_166
+@cmp_false_165
+    mvi a,0x00
+@cmp_end_166
+    eqi a,0
+    jr if_true_163
+    jmp if_else_161
+@if_true_163
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x14
+    mov (scv_print_char__arg_col),a
+    mvi a,0x31
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+    jmp if_end_162
+@if_else_161
+    mvi a,0x00
+    mov (scv_print_char__arg_row),a
+    mvi a,0x14
+    mov (scv_print_char__arg_col),a
+    mvi a,0x30
+    mov (scv_print_char__arg_ch),a
+    call fn_scv_print_char
+@if_end_162
+    jmp while_start_2
+@while_end_3
+@fn_main_end_1
+    ret
+
+-- *** stubs for extern functions — replace with real implementations ***
+
+-- scv_asset_enemy_0_load: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_enemy_0_load
+    lxi hl,asset_enemy_0
+    mvi d,0x28
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x3F
+    mov b,a
+@scv_asset_enemy_0_load_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_enemy_0_load_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_enemy_0_load_slot_loop
+@scv_asset_enemy_0_load_slot_done
+    mvi b,0x20
+@scv_asset_enemy_0_load_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_enemy_0_load_copy_loop
+    ret
+
+-- scv_asset_enemy_0_load_raw: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_enemy_0_load_raw
+    lxi hl,asset_enemy_0
+    mvi d,0x20
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x7F
+    mov b,a
+@scv_asset_enemy_0_load_raw_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_enemy_0_load_raw_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_enemy_0_load_raw_slot_loop
+@scv_asset_enemy_0_load_raw_slot_done
+    mvi b,0x20
+@scv_asset_enemy_0_load_raw_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_enemy_0_load_raw_copy_loop
+    ret
+
+-- scv_asset_enemy_1_load: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_enemy_1_load
+    lxi hl,asset_enemy_1
+    mvi d,0x28
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x3F
+    mov b,a
+@scv_asset_enemy_1_load_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_enemy_1_load_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_enemy_1_load_slot_loop
+@scv_asset_enemy_1_load_slot_done
+    mvi b,0x20
+@scv_asset_enemy_1_load_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_enemy_1_load_copy_loop
+    ret
+
+-- scv_asset_enemy_1_load_raw: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_enemy_1_load_raw
+    lxi hl,asset_enemy_1
+    mvi d,0x20
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x7F
+    mov b,a
+@scv_asset_enemy_1_load_raw_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_enemy_1_load_raw_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_enemy_1_load_raw_slot_loop
+@scv_asset_enemy_1_load_raw_slot_done
+    mvi b,0x20
+@scv_asset_enemy_1_load_raw_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_enemy_1_load_raw_copy_loop
+    ret
+
+-- scv_asset_enemy_2_load: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_enemy_2_load
+    lxi hl,asset_enemy_2
+    mvi d,0x28
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x3F
+    mov b,a
+@scv_asset_enemy_2_load_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_enemy_2_load_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_enemy_2_load_slot_loop
+@scv_asset_enemy_2_load_slot_done
+    mvi b,0x20
+@scv_asset_enemy_2_load_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_enemy_2_load_copy_loop
+    ret
+
+-- scv_asset_enemy_2_load_raw: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_enemy_2_load_raw
+    lxi hl,asset_enemy_2
+    mvi d,0x20
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x7F
+    mov b,a
+@scv_asset_enemy_2_load_raw_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_enemy_2_load_raw_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_enemy_2_load_raw_slot_loop
+@scv_asset_enemy_2_load_raw_slot_done
+    mvi b,0x20
+@scv_asset_enemy_2_load_raw_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_enemy_2_load_raw_copy_loop
+    ret
+
+-- scv_asset_enemy_3_load: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_enemy_3_load
+    lxi hl,asset_enemy_3
+    mvi d,0x28
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x3F
+    mov b,a
+@scv_asset_enemy_3_load_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_enemy_3_load_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_enemy_3_load_slot_loop
+@scv_asset_enemy_3_load_slot_done
+    mvi b,0x20
+@scv_asset_enemy_3_load_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_enemy_3_load_copy_loop
+    ret
+
+-- scv_asset_enemy_3_load_raw: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_enemy_3_load_raw
+    lxi hl,asset_enemy_3
+    mvi d,0x20
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x7F
+    mov b,a
+@scv_asset_enemy_3_load_raw_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_enemy_3_load_raw_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_enemy_3_load_raw_slot_loop
+@scv_asset_enemy_3_load_raw_slot_done
+    mvi b,0x20
+@scv_asset_enemy_3_load_raw_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_enemy_3_load_raw_copy_loop
+    ret
+
+-- scv_asset_player_load: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_player_load
+    lxi hl,asset_player
+    mvi d,0x28
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x3F
+    mov b,a
+@scv_asset_player_load_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_player_load_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_player_load_slot_loop
+@scv_asset_player_load_slot_done
+    mvi b,0x20
+@scv_asset_player_load_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_player_load_copy_loop
+    ret
+
+-- scv_asset_player_load_raw: arg pattern_slot arrives in (scv_asset__arg_pattern_slot)
+@fn_scv_asset_player_load_raw
+    lxi hl,asset_player
+    mvi d,0x20
+    mvi e,0x00
+    mov a,(scv_asset__arg_pattern_slot)
+    ani a,0x7F
+    mov b,a
+@scv_asset_player_load_raw_slot_loop
+    mov a,b
+    nei a,0
+    jr scv_asset_player_load_raw_slot_done
+    mvi a,0x20
+    add e,a
+    aci d,0
+    dcr b
+    jre scv_asset_player_load_raw_slot_loop
+@scv_asset_player_load_raw_slot_done
+    mvi b,0x20
+@scv_asset_player_load_raw_copy_loop
+    ldaxi (hl)
+    stax (de)
+    inx de
+    dcr b
+    jre scv_asset_player_load_raw_copy_loop
+    ret
+
+@fn_scv_asset_snd_tone_play
+    lxi de,scv_asset_snd_tone_data
+    lxi hl,0x3600
+    di
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wv1
+    skit f2
+    jr scv_asset_snd_tone_play_wv1_wait
+    jmp scv_asset_snd_tone_play_wv1_done
+@scv_asset_snd_tone_play_wv1_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wv1
+    jmp scv_asset_snd_tone_play_wv1_done
+@scv_asset_snd_tone_play_wv1_done
+    skit f1
+    nop
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wf0
+    skit f1
+    jr scv_asset_snd_tone_play_wf0_wait
+    jmp scv_asset_snd_tone_play_wf0_done
+@scv_asset_snd_tone_play_wf0_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wf0
+    jmp scv_asset_snd_tone_play_wf0_done
+@scv_asset_snd_tone_play_wf0_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wf1
+    skit f1
+    jr scv_asset_snd_tone_play_wf1_wait
+    jmp scv_asset_snd_tone_play_wf1_done
+@scv_asset_snd_tone_play_wf1_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wf1
+    jmp scv_asset_snd_tone_play_wf1_done
+@scv_asset_snd_tone_play_wf1_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wf2
+    skit f1
+    jr scv_asset_snd_tone_play_wf2_wait
+    jmp scv_asset_snd_tone_play_wf2_done
+@scv_asset_snd_tone_play_wf2_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wf2
+    jmp scv_asset_snd_tone_play_wf2_done
+@scv_asset_snd_tone_play_wf2_done
+    ldax (de)
+    stax (hl)
+    inx de
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wf3
+    skit f1
+    jr scv_asset_snd_tone_play_wf3_wait
+    jmp scv_asset_snd_tone_play_wf3_done
+@scv_asset_snd_tone_play_wf3_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wf3
+    jmp scv_asset_snd_tone_play_wf3_done
+@scv_asset_snd_tone_play_wf3_done
+    ldax (de)
+    stax (hl)
+    mvi b,0xFF
+@scv_asset_snd_tone_play_wv2
+    skit f2
+    jr scv_asset_snd_tone_play_wv2_wait
+    jmp scv_asset_snd_tone_play_wv2_done
+@scv_asset_snd_tone_play_wv2_wait
+    dcr b
+    jre scv_asset_snd_tone_play_wv2
+    jmp scv_asset_snd_tone_play_wv2_done
+@scv_asset_snd_tone_play_wv2_done
+    ei
+    ret
+
+-- scv_get_hw_sprite_y: arg id arrives in (scv_get_hw_sprite_y__arg_id)
+@fn_scv_get_hw_sprite_y
+    mov a,(scv_get_hw_sprite_y__arg_id)
+    add a,a
+    add a,a
+    mov l,a
+    mvi a,0x32
+    aci a,0
+    mov h,a
+    ldax (hl)
+    ret
+
+-- scv_move_hw_sprite_down: arg id arrives in (scv_move_hw_sprite_down__arg_id)
+-- scv_move_hw_sprite_down: arg step arrives in (scv_move_hw_sprite_down__arg_step)
+-- scv_move_hw_sprite_down: arg max_y arrives in (scv_move_hw_sprite_down__arg_max_y)
+@fn_scv_move_hw_sprite_down
+    mov a,(scv_move_hw_sprite_down__arg_id)
+    add a,a
+    add a,a
+    mov l,a
+    mvi a,0x32
+    aci a,0
+    mov h,a
+    ldax (hl)
+    mov b,a
+    mov a,(scv_move_hw_sprite_down__arg_max_y)
+    mov c,a
+    mov a,b
+    sub a,c
+    sknc
+    jr scv_move_hw_sprite_down_do_move
+    jmp scv_move_hw_sprite_down_no_move
+@scv_move_hw_sprite_down_do_move
+    mov a,(scv_move_hw_sprite_down__arg_step)
+    add a,b
+    stax (hl)
+@scv_move_hw_sprite_down_no_move
+    ret
+
+-- scv_move_hw_sprite_left: arg id arrives in (scv_move_hw_sprite_left__arg_id)
+-- scv_move_hw_sprite_left: arg step arrives in (scv_move_hw_sprite_left__arg_step)
+-- scv_move_hw_sprite_left: arg min_x arrives in (scv_move_hw_sprite_left__arg_min_x)
+@fn_scv_move_hw_sprite_left
+    mov a,(scv_move_hw_sprite_left__arg_id)
+    add a,a
+    add a,a
+    mov l,a
+    mvi a,0x32
+    aci a,0
+    mov h,a
+    inx hl
+    inx hl
+    ldax (hl)
+    mov b,a
+    mov a,(scv_move_hw_sprite_left__arg_min_x)
+    mov c,a
+    mov a,c
+    sub a,b
+    skc
+    jmp scv_move_hw_sprite_left_no_move
+    mov a,(scv_move_hw_sprite_left__arg_step)
+    mov c,a
+    mov a,b
+    sub a,c
+    stax (hl)
+@scv_move_hw_sprite_left_no_move
+    ret
+
+-- scv_move_hw_sprite_right: arg id arrives in (scv_move_hw_sprite_right__arg_id)
+-- scv_move_hw_sprite_right: arg step arrives in (scv_move_hw_sprite_right__arg_step)
+-- scv_move_hw_sprite_right: arg max_x arrives in (scv_move_hw_sprite_right__arg_max_x)
+@fn_scv_move_hw_sprite_right
+    mov a,(scv_move_hw_sprite_right__arg_id)
+    add a,a
+    add a,a
+    mov l,a
+    mvi a,0x32
+    aci a,0
+    mov h,a
+    inx hl
+    inx hl
+    ldax (hl)
+    mov b,a
+    mov a,(scv_move_hw_sprite_right__arg_max_x)
+    mov c,a
+    mov a,b
+    sub a,c
+    sknc
+    jr scv_move_hw_sprite_right_do_move
+    jmp scv_move_hw_sprite_right_no_move
+@scv_move_hw_sprite_right_do_move
+    mov a,(scv_move_hw_sprite_right__arg_step)
+    add a,b
+    stax (hl)
+@scv_move_hw_sprite_right_no_move
+    ret
+
+-- scv_move_hw_sprite_up: arg id arrives in (scv_move_hw_sprite_up__arg_id)
+-- scv_move_hw_sprite_up: arg step arrives in (scv_move_hw_sprite_up__arg_step)
+-- scv_move_hw_sprite_up: arg min_y arrives in (scv_move_hw_sprite_up__arg_min_y)
+@fn_scv_move_hw_sprite_up
+    mov a,(scv_move_hw_sprite_up__arg_id)
+    add a,a
+    add a,a
+    mov l,a
+    mvi a,0x32
+    aci a,0
+    mov h,a
+    ldax (hl)
+    mov b,a
+    mov a,(scv_move_hw_sprite_up__arg_min_y)
+    mov c,a
+    mov a,c
+    sub a,b
+    skc
+    jmp scv_move_hw_sprite_up_no_move
+    mov a,(scv_move_hw_sprite_up__arg_step)
+    mov c,a
+    mov a,b
+    sub a,c
+    stax (hl)
+@scv_move_hw_sprite_up_no_move
+    ret
+
+-- scv_print_char: arg row arrives in (scv_print_char__arg_row)
+-- scv_print_char: arg col arrives in (scv_print_char__arg_col)
+-- scv_print_char: arg ch arrives in (scv_print_char__arg_ch)
+@fn_scv_print_char
+    mvi h,0x30
+    mvi l,0x40
+    mov b,(scv_print_char__arg_row)
+@scv_print_char_row_loop
+    mov a,b
+    nei a,0
+    jr scv_print_char_col_step
+    adi l,0x20
+    aci h,0
+    dcr b
+    jre scv_print_char_row_loop
+@scv_print_char_col_step
+    mov a,(scv_print_char__arg_col)
+    adi a,0x03
+    add l,a
+    aci h,0
+    mov a,(scv_print_char__arg_ch)
+    stax (hl)
+    ret
+
+-- scv_print_string: arg x arrives in (scv_print_string__arg_x)
+-- scv_print_string: arg y arrives in (scv_print_string__arg_y)
+-- scv_print_string: arg str arrives in (scv_print_string__arg_str)
+@fn_scv_print_string
+    mvi a,0x20
+    mov (scv_print_string__tmp_guard),a
+@scv_print_string_loop
+    mov a,(scv_print_string__tmp_guard)
+    eqi a,0
+    skz
+    jmp scv_print_string_check_char
+    ret
+@scv_print_string_check_char
+    ldax (de)
+    mov b,a
+    eqi a,0
+    skz
+    jmp scv_print_string_print_char
+    ret
+@scv_print_string_print_char
+    mov a,b
+    mov (scv_print_char__arg_ch),a
+    mov a,(scv_print_string__arg_x)
+    mov (scv_print_char__arg_row),a
+    mov a,(scv_print_string__arg_y)
+    mov (scv_print_char__arg_col),a
+    call fn_scv_print_char
+    inx de
+    mov a,(scv_print_string__arg_y)
+    adi a,0x01
+    mov (scv_print_string__arg_y),a
+    mov a,(scv_print_string__tmp_guard)
+    adi a,0xFF
+    mov (scv_print_string__tmp_guard),a
+    jmp scv_print_string_loop
+
+@fn_scv_read_pad1
+    mvi a,0xFD
+    mov pa,a
+    nop
+    mov a,pb
+    mov a,pb
+    mov (scv_pad1_state),a
+    ret
+
+@fn_scv_read_pad2
+    mvi a,0xFE
+    mov pa,a
+    nop
+    mov a,pb
+    mov a,pb
+    mov (scv_pad2_state),a
+    ret
+
+-- scv_set_hw_sprite: arg id arrives in (scv_set_hw_sprite__arg_id)
+-- scv_set_hw_sprite: arg x arrives in (scv_set_hw_sprite__arg_x)
+-- scv_set_hw_sprite: arg y arrives in (scv_set_hw_sprite__arg_y)
+-- scv_set_hw_sprite: arg pattern arrives in (scv_set_hw_sprite__arg_pattern)
+-- scv_set_hw_sprite: arg color arrives in (scv_set_hw_sprite__arg_color)
+@fn_scv_set_hw_sprite
+    mov a,(scv_set_hw_sprite__arg_id)
+    add a,a
+    add a,a
+    mov l,a
+    mvi a,0x32
+    aci a,0
+    mov h,a
+    mov a,(scv_set_hw_sprite__arg_y)
+    staxi (hl)
+    mov a,(scv_set_hw_sprite__arg_color)
+    staxi (hl)
+    mov a,(scv_set_hw_sprite__arg_x)
+    staxi (hl)
+    mov a,(scv_set_hw_sprite__arg_pattern)
+    ani a,0x3F
+    mvi b,0x40
+    ora a,b
+    stax (hl)
+    ret
+
+-- scv_set_hw_sprite_anim: arg id arrives in (scv_set_hw_sprite_anim__arg_id)
+-- scv_set_hw_sprite_anim: arg x arrives in (scv_set_hw_sprite_anim__arg_x)
+-- scv_set_hw_sprite_anim: arg y arrives in (scv_set_hw_sprite_anim__arg_y)
+-- scv_set_hw_sprite_anim: arg base_pattern arrives in (scv_set_hw_sprite_anim__arg_base_pattern)
+-- scv_set_hw_sprite_anim: arg frame arrives in (scv_set_hw_sprite_anim__arg_frame)
+-- scv_set_hw_sprite_anim: arg color arrives in (scv_set_hw_sprite_anim__arg_color)
+@fn_scv_set_hw_sprite_anim
+    mov a,(scv_set_hw_sprite_anim__arg_base_pattern)
+    mov b,a
+    mov a,(scv_set_hw_sprite_anim__arg_frame)
+    add a,b
+    mov c,a
+    mov a,c
+    ani a,0x3F
+    mvi b,0x40
+    ora a,b
+    mov c,a
+    mov a,(scv_set_hw_sprite_anim__arg_id)
+    add a,a
+    add a,a
+    mov l,a
+    mvi a,0x32
+    aci a,0
+    mov h,a
+    mov a,(scv_set_hw_sprite_anim__arg_y)
+    staxi (hl)
+    mov a,(scv_set_hw_sprite_anim__arg_color)
+    staxi (hl)
+    mov a,(scv_set_hw_sprite_anim__arg_x)
+    staxi (hl)
+    mov a,c
+    stax (hl)
+    ret
+
+-- scv_set_hw_sprite_frame: arg id arrives in (scv_set_hw_sprite_frame__arg_id)
+-- scv_set_hw_sprite_frame: arg base_pattern arrives in (scv_set_hw_sprite_frame__arg_base_pattern)
+-- scv_set_hw_sprite_frame: arg frame arrives in (scv_set_hw_sprite_frame__arg_frame)
+@fn_scv_set_hw_sprite_frame
+    mov a,(scv_set_hw_sprite_frame__arg_base_pattern)
+    mov b,a
+    mov a,(scv_set_hw_sprite_frame__arg_frame)
+    add a,b
+    mov c,a
+    mov a,c
+    ani a,0x3F
+    mvi b,0x40
+    ora a,b
+    mov c,a
+    mov a,(scv_set_hw_sprite_frame__arg_id)
+    add a,a
+    add a,a
+    mov l,a
+    mvi a,0x32
+    aci a,0
+    mov h,a
+    inx hl
+    inx hl
+    inx hl
+    mov a,c
+    stax (hl)
+    ret
+
+@fn_scv_stop_sound
+    lxi hl,0x3600
+    di
+    mvi b,0xFF
+@scv_stop_sound_wv1
+    skit f2
+    jr scv_stop_sound_wv1_wait
+    jmp scv_stop_sound_wv1_done
+@scv_stop_sound_wv1_wait
+    dcr b
+    jre scv_stop_sound_wv1
+    jmp scv_stop_sound_wv1_done
+@scv_stop_sound_wv1_done
+    skit f1
+    nop
+    mvix (hl),0x00
+    ei
+    ret
+
+@fn_scv_wait_vblank
+@scv_wait_vblank_wait
+    skit f2
+    jr scv_wait_vblank_wait
+    ret
+
+-- PNG asset data
+
+-- sprite player from /Users/jblanchard/Documents/Code/Retro/SCV/examples/assets/face.png
+@asset_player
+    dc.b 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0xC3, 0x00, 0x11, 0x00, 0x00, 0x88, 0x22, 0x66, 0x66, 0x44
+    dc.b 0x22, 0x00, 0x00, 0x44, 0x11, 0x43, 0x2C, 0x88, 0x00, 0xC3, 0x3C, 0x00, 0x00, 0x00, 0x00, 0x00
+
+-- spritesheet enemy from /Users/jblanchard/Documents/Code/Retro/SCV/examples/assets/arrows.png
+@asset_enemy_0
+    dc.b 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x8C, 0x00, 0x00, 0x33, 0xEE, 0x00, 0x00, 0x7F, 0xFF, 0x08
+    dc.b 0x10, 0xF3, 0xFE, 0xC0, 0x00, 0x33, 0xEE, 0x00, 0x00, 0x33, 0xEE, 0x00, 0x00, 0x00, 0x00, 0x00
+
+@asset_enemy_1
+    dc.b 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x0E, 0x00, 0x00, 0x33, 0xEE, 0x00, 0x00, 0x33, 0xEE, 0x00
+    dc.b 0x10, 0xFF, 0xFF, 0xC8, 0x00, 0x73, 0xFE, 0x00, 0x00, 0x31, 0xEC, 0x00, 0x00, 0x00, 0x80, 0x00
+
+@asset_enemy_2
+    dc.b 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x13, 0x88, 0x00, 0x01, 0xFF, 0xFF, 0xCC
+    dc.b 0x31, 0xFF, 0xFF, 0xCC, 0x00, 0xF3, 0xF8, 0xC0, 0x00, 0x10, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00
+
+@asset_enemy_3
+    dc.b 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0xCE, 0x00, 0x11, 0xFF, 0xFF, 0x8C
+    dc.b 0x11, 0xFF, 0xFF, 0xEC, 0x10, 0xF0, 0xFE, 0x80, 0x00, 0x00, 0xC8, 0x00, 0x00, 0x00, 0x00, 0x00
+
+-- Sound asset data
+
+-- sound tone snd_tone
+@scv_asset_snd_tone_data
+    dc.b 0x02, 0x02, 0x80, 0xFF, 0x7F
+
+
+writebin(filename .. '.bin')
