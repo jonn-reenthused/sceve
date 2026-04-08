@@ -43,3 +43,5 @@ But basically, create a c file, run it through c_to_l7801.py and (if that works)
 I should also add that i've NEVER tested this on an actual SCV. I should build a cartridge at some point.
 
 Anyway, have fun.
+
+N.B. No, I never made Jurl using this.  In the time between starting it and now I managed to release 30 versions of Jurl on other platforms and i'm a little burnt out now.  Maybe in the future.
