@@ -27,6 +27,8 @@ You need pycparser installed for the actual c_to_l7801.py converter
 Obviously you need l65 installed too, you'll probably have to compile it yourself (https://github.com/g012/l65)
 For the graphics converters you'll need Pillow installed
 
+As a side-note.  When I started working on this l65 was in (moderately) active development, i've just noticed that it's been 2 years since anything happened.  I don't *think* it'll be a problem.
+
 ## How to use it
 There are numerous examples, but they've kind of evolved with the project, so some of them do things a bit differently.  game_demo.c *should* be pretty up to date with stuff.
 
