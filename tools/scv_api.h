@@ -1,5 +1,9 @@
 /*
  * scv_api.h -- Super Cassette Vision Hardware API
+ * 
+ * Johnny Blanchard (Tonsomo Entertainment / RE:Enthused / Roguegunners Productions)
+ * This isn't a 'real' header per se, you couldn't use it in a real C program (plus theres no lib anyway)
+ * It really exists to act like self documentation, technically the process could entirely exist without this
  *
  * Include this header in your C source and call these functions.
  * The c_to_l7801.py converter recognises them and emits real
