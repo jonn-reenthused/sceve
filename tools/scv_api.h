@@ -135,11 +135,12 @@ extern void scv_set_hw_sprite_raw(int id, int x, int y, int pattern, int color);
 extern void scv_hide_hw_sprite(int id);
 extern void scv_set_hw_sprite_pos(int id, int x, int y);
 extern void scv_set_hw_sprite_pattern(int id, int pattern);
-extern void scv_set_hw_sprite_color(int id, int color);
+extern void scv_set_hw_sprite_colour(int id, int color);
 extern void scv_set_hw_sprite_frame(int id, int base_pattern, int frame);
 extern void scv_set_hw_sprite_anim(int id, int x, int y,
                                    int base_pattern, int frame, int color);
 extern void scv_set_hw_sprite_mode(int use_64_sprite_mode);
+extern void scv_set_vdc_regs(int r0, int r1, int r2, int r3);
 extern void scv_move_hw_sprite_left(int id, int step, int min_x);
 extern void scv_move_hw_sprite_right(int id, int step, int max_x);
 extern void scv_move_hw_sprite_up(int id, int step, int min_y);

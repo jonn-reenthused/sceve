@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Convert a restricted subset of C into l7801/l65 source (.l7801).
+
 Johnny Blanchard (Tonsomo Entertainment/RE:Enthused/Roguegunners Productions)
 
 The output targets BlockoS l65 tooling and is intended as a conservative
@@ -44,7 +45,7 @@ class FunctionContext:
 class AssetFunction:
     function_name: str
     frame: ScvPngFrame
-    raw_pattern_slot: bool = False
+    pattern_mode: str = "sprite"
 
 
 @dataclass
@@ -87,20 +88,21 @@ class L7801L65Emitter:
         "scv_set_sprite": ["id", "col", "row", "tile_id"],
         "scv_move_sprite": ["id", "col", "row"],
         "scv_hide_sprite": ["id"],
-        "scv_set_hw_sprite": ["id", "x", "y", "pattern", "color"],
-        "scv_set_hw_sprite_raw": ["id", "x", "y", "pattern", "color"],
+        "scv_set_hw_sprite": ["id", "x", "y", "pattern", "colour"],
+        "scv_set_hw_sprite_raw": ["id", "x", "y", "pattern", "colour"],
         "scv_hide_hw_sprite": ["id"],
         "scv_set_hw_sprite_pos": ["id", "x", "y"],
         "scv_set_hw_sprite_pattern": ["id", "pattern"],
-        "scv_set_hw_sprite_color": ["id", "color"],
+        "scv_set_hw_sprite_colour": ["id", "colour"],
         "scv_set_hw_sprite_frame": ["id", "base_pattern", "frame"],
-        "scv_set_hw_sprite_anim": ["id", "x", "y", "base_pattern", "frame", "color"],
+        "scv_set_hw_sprite_anim": ["id", "x", "y", "base_pattern", "frame", "colour"],
         "scv_set_hw_sprite_mode": ["use_64_sprite_mode"],
         "scv_move_hw_sprite_left": ["id", "step", "min_x"],
         "scv_move_hw_sprite_right": ["id", "step", "max_x"],
         "scv_move_hw_sprite_up": ["id", "step", "min_y"],
         "scv_move_hw_sprite_down": ["id", "step", "max_y"],
         "scv_get_hw_sprite_y": ["id"],
+        "scv_set_vdc_regs": ["r0", "r1", "r2", "r3"],
         "scv_read_pad1": [],
         "scv_read_pad2": [],
         "scv_read_input_scan": ["pa_mask"],
@@ -595,7 +597,7 @@ class L7801L65Emitter:
             "    mov h,a",
             "    mov a,({fn}__arg_y)",
             "    staxi (hl)",
-            "    mov a,({fn}__arg_color)",
+            "    mov a,({fn}__arg_colour)",
             "    staxi (hl)",
             "    mov a,({fn}__arg_x)",
             "    staxi (hl)",
@@ -616,7 +618,7 @@ class L7801L65Emitter:
             "    mov h,a",
             "    mov a,({fn}__arg_y)",
             "    staxi (hl)",
-            "    mov a,({fn}__arg_color)",
+            "    mov a,({fn}__arg_colour)",
             "    staxi (hl)",
             "    mov a,({fn}__arg_x)",
             "    staxi (hl)",
@@ -673,7 +675,7 @@ class L7801L65Emitter:
             "    stax (hl)",
             "    ret",
         ],
-        "scv_set_hw_sprite_color": [
+        "scv_set_hw_sprite_colour": [
             "    mov a,({fn}__arg_id)",
             "    add a,a",
             "    add a,a",
@@ -682,7 +684,7 @@ class L7801L65Emitter:
             "    aci a,0",
             "    mov h,a",
             "    inx hl",
-            "    mov a,({fn}__arg_color)",
+            "    mov a,({fn}__arg_colour)",
             "    stax (hl)",
             "    ret",
         ],
@@ -731,7 +733,7 @@ class L7801L65Emitter:
             "    mov h,a",
             "    mov a,({fn}__arg_y)",
             "    staxi (hl)",
-            "    mov a,({fn}__arg_color)",
+            "    mov a,({fn}__arg_colour)",
             "    staxi (hl)",
             "    mov a,({fn}__arg_x)",
             "    staxi (hl)",
@@ -861,6 +863,18 @@ class L7801L65Emitter:
             "    ldax (hl)",
             "    ret",
         ],
+        "scv_set_vdc_regs": [
+            "    lxi hl,0x3400",
+            "    mov a,({fn}__arg_r0)",
+            "    staxi (hl)",
+            "    mov a,({fn}__arg_r1)",
+            "    staxi (hl)",
+            "    mov a,({fn}__arg_r2)",
+            "    staxi (hl)",
+            "    mov a,({fn}__arg_r3)",
+            "    stax (hl)",
+            "    ret",
+        ],
         "scv_read_pad1": [
             "    mvi a,0xFD",
             "    mov pa,a",
@@ -968,6 +982,7 @@ class L7801L65Emitter:
         self.source_path: Optional[Path] = None
         self.asset_directives: List[AssetDirective] = []
         self.asset_functions: Dict[str, AssetFunction] = {}
+        self.asset_bulk_functions: Dict[str, List[str]] = {}
         self.sound_assets: List[SoundAsset] = []
         self.rom_constants: Dict[str, int] = {}
         self.rom_data_blocks: List[RomDataBlock] = []
@@ -983,6 +998,7 @@ class L7801L65Emitter:
         self.source_path = source_path
         self.asset_directives = []
         self.asset_functions = {}
+        self.asset_bulk_functions = {}
         self.sound_assets = []
         self.rom_constants = {}
         self.rom_data_blocks = []
@@ -997,7 +1013,9 @@ class L7801L65Emitter:
         self.defined_functions = set()
         self.extern_functions = set()
         parser = c_parser.CParser()
-        ast = parser.parse(self._sanitize_source(source))
+        ast = parser.parse(
+            self._sanitize_source(source, current_path=self.source_path, include_stack=set())
+        )
 
         self.lines = [
             "require 'scv'",
@@ -1024,7 +1042,7 @@ class L7801L65Emitter:
                 "    ei",
                 "    calt 0x8C",
                 "    lxi hl,0x3400",
-                "    mvi a,0xF4",
+                "    mvi a,0xF0",
                 "    staxi (hl)",
                 "    mvi a,0x00",
                 "    staxi (hl)",
@@ -1135,9 +1153,12 @@ class L7801L65Emitter:
 
             self._emit(f"@fn_{fn}")
             asset_fn = self.asset_functions.get(fn)
+            bulk_asset_frames = self.asset_bulk_functions.get(fn)
             sound_asset = next((s for s in self.sound_assets if s.play_fn == fn), None)
             if asset_fn is not None:
                 impl = self._build_asset_loader_impl(asset_fn)
+            elif bulk_asset_frames is not None:
+                impl = self._build_asset_bulk_loader_impl(fn, bulk_asset_frames)
             elif sound_asset is not None:
                 impl = self._build_sound_play_impl(fn, sound_asset)
             else:
@@ -1194,8 +1215,15 @@ class L7801L65Emitter:
         function_name = asset_fn.function_name
         frame_label = asset_fn.frame.symbol_name
         arg_slot = self._arg_symbol_name(function_name, "pattern_slot")
-        base_hi = "0x20" if asset_fn.raw_pattern_slot else "0x28"
-        slot_mask = "0x7F" if asset_fn.raw_pattern_slot else "0x3F"
+        if asset_fn.pattern_mode == "raw":
+            base_hi = "0x20"
+            slot_mask = "0x7F"
+        elif asset_fn.pattern_mode == "background":
+            base_hi = "0x20"
+            slot_mask = "0x3F"
+        else:
+            base_hi = "0x28"
+            slot_mask = "0x3F"
         return [
             f"    lxi hl,{frame_label}",
             f"    mvi d,{base_hi}",
@@ -1222,6 +1250,30 @@ class L7801L65Emitter:
             f"    jre {function_name}_copy_loop",
             "    ret",
         ]
+
+    def _build_asset_bulk_loader_impl(
+        self, function_name: str, frame_loader_names: List[str]
+    ) -> List[str]:
+        arg_slot = self._arg_symbol_name(function_name, "pattern_slot")
+        base_slot = self._alloc_symbol("scv_asset__tmp_base_slot")
+        lines: List[str] = []
+        lines.extend(
+            [
+                f"    mov a,({arg_slot})",
+                f"    mov ({base_slot}),a",
+            ]
+        )
+        for index, frame_loader in enumerate(frame_loader_names):
+            lines.extend(
+                [
+                    f"    mov a,({base_slot})",
+                    f"    adi a,{self._fmt_imm(index)}",
+                    "    mov (scv_asset__arg_pattern_slot),a",
+                    f"    call fn_{frame_loader}",
+                ]
+            )
+        lines.append("    ret")
+        return lines
 
     def _build_sound_play_impl(self, function_name: str, asset: SoundAsset) -> List[str]:
         """Build an unrolled play routine that reads all bytes from ROM via DE.
@@ -1285,9 +1337,18 @@ class L7801L65Emitter:
         ]
         return lines
 
-    def _sanitize_source(self, source: str) -> str:
+    def _sanitize_source(
+        self,
+        source: str,
+        *,
+        current_path: Optional[Path] = None,
+        include_stack: Optional[Set[Path]] = None,
+    ) -> str:
         source = re.sub(r"//.*?$", "", source, flags=re.MULTILINE)
         source = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+
+        if include_stack is None:
+            include_stack = set()
 
         filtered: List[str] = []
         for line in source.splitlines():
@@ -1300,6 +1361,33 @@ class L7801L65Emitter:
                     self._parse_asset_directive(stripped)
                     continue
                 if stripped.startswith("#include"):
+                    include_match = re.fullmatch(r'#include\s+"([^"]+)"', stripped)
+                    if include_match:
+                        include_raw = include_match.group(1)
+                        if include_raw.endswith(".c"):
+                            if current_path is None:
+                                raise ConversionError(
+                                    f"#include requires a source path context: {stripped}"
+                                )
+                            include_path = (current_path.parent / include_raw).resolve()
+                            if not include_path.exists():
+                                raise ConversionError(
+                                    f"Included file not found: {include_raw}"
+                                )
+                            if include_path in include_stack:
+                                raise ConversionError(
+                                    f"Recursive include detected for: {include_raw}"
+                                )
+                            include_stack.add(include_path)
+                            include_source = include_path.read_text(encoding="utf-8")
+                            expanded = self._sanitize_source(
+                                include_source,
+                                current_path=include_path,
+                                include_stack=include_stack,
+                            )
+                            include_stack.remove(include_path)
+                            if expanded:
+                                filtered.append(expanded)
                     continue
                 if self.strict:
                     raise ConversionError(
@@ -1347,7 +1435,7 @@ class L7801L65Emitter:
 
     def _parse_asset_directive(self, line: str) -> None:
         match = re.fullmatch(
-            r'#pragma\s+scv_asset\s+(sprite|spritesheet)\s+([A-Za-z_][A-Za-z0-9_]*)\s+"([^"]+)"(?:\s+(\d+)\s+(\d+))?\s*',
+            r'#pragma\s+scv_asset\s+(sprite|spritesheet|background|backgroundsheet)\s+([A-Za-z_][A-Za-z0-9_]*)\s+"([^"]+)"(?:\s+(\d+)\s+(\d+))?\s*',
             line,
         )
         if not match:
@@ -1358,7 +1446,7 @@ class L7801L65Emitter:
             raise ConversionError("SCV asset directives require a source path")
 
         asset_path = (self.source_path.parent / raw_path).resolve()
-        if kind == "sprite":
+        if kind in {"sprite", "background"}:
             frame_width = 16
             frame_height = 16
         else:
@@ -1388,24 +1476,33 @@ class L7801L65Emitter:
                 frames=frames,
             )
         )
+        frame_loader_names: List[str] = []
+        is_background_asset = kind in {"background", "backgroundsheet"}
         for frame in frames:
             function_name = frame.loader_name
+            frame_loader_names.append(function_name)
             self.asset_functions[function_name] = AssetFunction(
                 function_name=function_name,
                 frame=frame,
-                raw_pattern_slot=False,
+                pattern_mode="background" if is_background_asset else "sprite",
             )
             self.function_params[function_name] = ["pattern_slot"]
             self.extern_functions.add(function_name)
 
-            raw_function_name = f"{frame.loader_name}_raw"
-            self.asset_functions[raw_function_name] = AssetFunction(
-                function_name=raw_function_name,
-                frame=frame,
-                raw_pattern_slot=True,
-            )
-            self.function_params[raw_function_name] = ["pattern_slot"]
-            self.extern_functions.add(raw_function_name)
+            if not is_background_asset:
+                raw_function_name = f"{frame.loader_name}_raw"
+                self.asset_functions[raw_function_name] = AssetFunction(
+                    function_name=raw_function_name,
+                    frame=frame,
+                    pattern_mode="raw",
+                )
+                self.function_params[raw_function_name] = ["pattern_slot"]
+                self.extern_functions.add(raw_function_name)
+
+        if kind in {"spritesheet", "backgroundsheet"}:
+            bulk_loader_name = f"scv_asset_{name}_load_all"
+            self.asset_bulk_functions[bulk_loader_name] = frame_loader_names
+            self.function_params[bulk_loader_name] = ["pattern_slot"]
 
     def _new_label(self, prefix: str) -> str:
         self.label_counter += 1
@@ -2021,12 +2118,12 @@ class L7801L65Emitter:
         callee = call.name.name
         params = self.function_params.get(callee)
 
-        if callee in self.asset_functions:
+        if callee in self.asset_functions or callee in self.asset_bulk_functions:
             self.extern_functions.add(callee)
         elif callee in self.function_params and callee not in self.defined_functions:
             self.extern_functions.add(callee)
 
-        if params is None and callee in self.asset_functions:
+        if params is None and (callee in self.asset_functions or callee in self.asset_bulk_functions):
             params = ["pattern_slot"]
             self.function_params[callee] = params
             self.extern_functions.add(callee)
@@ -2413,7 +2510,43 @@ class L7801L65Emitter:
     def _emit_binary(self, binary: c_ast.BinaryOp) -> None:
         op = binary.op
 
-        if op in {"+", "-", "&", "|", "^"}:
+        if op in {"+", "-", "&", "|", "^", "*"}:
+            if op == "*":
+                lhs_slot = self._alloc_symbol("mul__lhs")
+                rhs_slot = self._alloc_symbol("mul__rhs")
+                acc_slot = self._alloc_symbol("mul__acc")
+                loop_label = self._new_label("mul_loop")
+                body_label = self._new_label("mul_body")
+                done_label = self._new_label("mul_done")
+
+                self._emit_expr_to_a(binary.left)
+                self._emit(f"    mov ({lhs_slot}),a")
+                self._emit_expr_to_a(binary.right)
+                self._emit(f"    mov ({rhs_slot}),a")
+                self._emit("    mvi a,0x00")
+                self._emit(f"    mov ({acc_slot}),a")
+
+                self._emit(f"@{loop_label}")
+                self._emit(f"    mov a,({rhs_slot})")
+                self._emit("    eqi a,0")
+                self._emit(f"    jr {body_label}")
+                self._emit(f"    jmp {done_label}")
+
+                self._emit(f"@{body_label}")
+                self._emit(f"    mov a,({acc_slot})")
+                self._emit("    mov b,a")
+                self._emit(f"    mov a,({lhs_slot})")
+                self._emit("    add a,b")
+                self._emit(f"    mov ({acc_slot}),a")
+                self._emit(f"    mov a,({rhs_slot})")
+                self._emit("    adi a,0xFF")
+                self._emit(f"    mov ({rhs_slot}),a")
+                self._emit(f"    jmp {loop_label}")
+
+                self._emit(f"@{done_label}")
+                self._emit(f"    mov a,({acc_slot})")
+                return
+
             self._emit_expr_to_a(binary.left)
             self._emit("    mov b,a")
             self._emit_expr_to_a(binary.right)
