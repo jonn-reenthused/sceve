@@ -59,7 +59,7 @@
  *   - a mutable RAM array (char buf[N])
  *   - a string literal (e.g., "hello")
  * ---------------------------------------------------------------- */
-extern void scv_print_char(int row, int col, int ch);
+extern void scv_print_char(int x, int y, int ch);
 extern void scv_print_string(int x, int y, char *str);
 
 /* ----------------------------------------------------------------
@@ -146,6 +146,37 @@ extern void scv_move_hw_sprite_right(int id, int step, int max_x);
 extern void scv_move_hw_sprite_up(int id, int step, int min_y);
 extern void scv_move_hw_sprite_down(int id, int step, int max_y);
 extern int scv_get_hw_sprite_y(int id);
+
+/* ----------------------------------------------------------------
+ * Feature 3c -- BIOS helper wrappers
+ * These map directly to BIOS CALT entries discovered from BIOS/game
+ * disassembly and provide stable call points from C.
+ *
+ * scv_bios_clear_text_vram()    -> CALT 0x86 (0x0A1B)
+ * scv_bios_clear_pattern_vram() -> CALT 0x88 (0x0A4A)
+ * scv_bios_clear_hw_sprites()   -> BIOS routine 0x0A28
+ *                                  (CALT 0x87 equivalent; emitted as CALL
+ *                                   because current l7801 rejects odd CALT)
+ *
+ * 16-bit helpers expose the BIOS ALU routines and return the high
+ * result byte in A:
+ *   add16_hi: BIOS CALT 0x9A (0x0D48)
+ *   sub16_hi: BIOS CALT 0x9C (0x0D6B)
+ * ---------------------------------------------------------------- */
+extern void scv_bios_clear_text_vram(void);
+extern void scv_bios_clear_pattern_vram(void);
+extern void scv_bios_clear_hw_sprites(void);
+extern int scv_bios_add16_hi(int de_hi, int de_lo, int hl_hi, int hl_lo);
+extern int scv_bios_sub16_hi(int de_hi, int de_lo, int hl_hi, int hl_lo);
+
+/* Compatibility aliases recognised by the converter. */
+extern int scv_bios_add16(int de_hi, int de_lo, int hl_hi, int hl_lo);
+extern int scv_bios_sub16(int de_hi, int de_lo, int hl_hi, int hl_lo);
+extern int svc_bios_add16(int de_hi, int de_lo, int hl_hi, int hl_lo);
+extern int svc_bios_sub16(int de_hi, int de_lo, int hl_hi, int hl_lo);
+extern void svc_bios_clear_text_vram(void);
+extern void svc_bios_clear_pattern_vram(void);
+extern void svc_bios_clear_hw_sprites(void);
 
 /* ----------------------------------------------------------------
  * Feature 4 -- Controller input

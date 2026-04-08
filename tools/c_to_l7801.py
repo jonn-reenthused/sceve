@@ -76,10 +76,20 @@ class RomDataBlock:
 class L7801L65Emitter:
     STACK_INIT = 0xFFF0
 
+    API_ALIASES: Dict[str, str] = {
+        "scv_bios_add16": "scv_bios_add16_hi",
+        "scv_bios_sub16": "scv_bios_sub16_hi",
+        "svc_bios_add16": "scv_bios_add16_hi",
+        "svc_bios_sub16": "scv_bios_sub16_hi",
+        "svc_bios_clear_text_vram": "scv_bios_clear_text_vram",
+        "svc_bios_clear_pattern_vram": "scv_bios_clear_pattern_vram",
+        "svc_bios_clear_hw_sprites": "scv_bios_clear_hw_sprites",
+    }
+
     SCV_API_PARAMS: Dict[str, List[str]] = {
         "strlen": ["str"],
         "sprintf": ["dst", "fmt", "value"],
-        "scv_print_char": ["row", "col", "ch"],
+        "scv_print_char": ["x", "y", "ch"],
         "scv_print_string": ["x", "y", "str"],
         "scv_draw_tile": ["row", "col", "tile_id"],
         "scv_draw_bg_tile": ["row", "col", "tile_id"],
@@ -103,6 +113,11 @@ class L7801L65Emitter:
         "scv_move_hw_sprite_down": ["id", "step", "max_y"],
         "scv_get_hw_sprite_y": ["id"],
         "scv_set_vdc_regs": ["r0", "r1", "r2", "r3"],
+        "scv_bios_clear_text_vram": [],
+        "scv_bios_clear_pattern_vram": [],
+        "scv_bios_clear_hw_sprites": [],
+        "scv_bios_add16_hi": ["de_hi", "de_lo", "hl_hi", "hl_lo"],
+        "scv_bios_sub16_hi": ["de_hi", "de_lo", "hl_hi", "hl_lo"],
         "scv_read_pad1": [],
         "scv_read_pad2": [],
         "scv_read_input_scan": ["pa_mask"],
@@ -270,7 +285,7 @@ class L7801L65Emitter:
         "scv_print_char": [
             "    mvi h,0x30",
             "    mvi l,0x40",
-            "    mov b,({fn}__arg_row)",
+            "    mov b,({fn}__arg_y)",
             "@{fn}_row_loop",
             "    mov a,b",
             "    nei a,0",
@@ -280,7 +295,7 @@ class L7801L65Emitter:
             "    dcr b",
             "    jre {fn}_row_loop",
             "@{fn}_col_step",
-            "    mov a,({fn}__arg_col)",
+            "    mov a,({fn}__arg_x)",
             "    adi a,0x03",
             "    add l,a",
             "    aci h,0",
@@ -307,15 +322,15 @@ class L7801L65Emitter:
             "@{fn}_print_char",
             "    mov a,b",
             "    mov (scv_print_char__arg_ch),a",
-            "    mov a,({fn}__arg_x)",
-            "    mov (scv_print_char__arg_row),a",
             "    mov a,({fn}__arg_y)",
-            "    mov (scv_print_char__arg_col),a",
+            "    mov (scv_print_char__arg_y),a",
+            "    mov a,({fn}__arg_x)",
+            "    mov (scv_print_char__arg_x),a",
             "    call fn_scv_print_char",
             "    inx de",
-            "    mov a,({fn}__arg_y)",
+            "    mov a,({fn}__arg_x)",
             "    adi a,0x01",
-            "    mov ({fn}__arg_y),a",
+            "    mov ({fn}__arg_x),a",
             "    mov a,(scv_print_string__tmp_guard)",
             "    adi a,0xFF",
             "    mov (scv_print_string__tmp_guard),a",
@@ -873,6 +888,44 @@ class L7801L65Emitter:
             "    staxi (hl)",
             "    mov a,({fn}__arg_r3)",
             "    stax (hl)",
+            "    ret",
+        ],
+        "scv_bios_clear_text_vram": [
+            "    call 0x0A1B",
+            "    ret",
+        ],
+        "scv_bios_clear_pattern_vram": [
+            "    calt 0x88",
+            "    ret",
+        ],
+        "scv_bios_clear_hw_sprites": [
+            "    call 0x0A28",
+            "    ret",
+        ],
+        "scv_bios_add16_hi": [
+            "    mov a,({fn}__arg_de_hi)",
+            "    mov d,a",
+            "    mov a,({fn}__arg_de_lo)",
+            "    mov e,a",
+            "    mov a,({fn}__arg_hl_hi)",
+            "    mov h,a",
+            "    mov a,({fn}__arg_hl_lo)",
+            "    mov l,a",
+            "    calt 0x9A",
+            "    mov a,d",
+            "    ret",
+        ],
+        "scv_bios_sub16_hi": [
+            "    mov a,({fn}__arg_de_hi)",
+            "    mov d,a",
+            "    mov a,({fn}__arg_de_lo)",
+            "    mov e,a",
+            "    mov a,({fn}__arg_hl_hi)",
+            "    mov h,a",
+            "    mov a,({fn}__arg_hl_lo)",
+            "    mov l,a",
+            "    calt 0x9C",
+            "    mov a,d",
             "    ret",
         ],
         "scv_read_pad1": [
@@ -1687,6 +1740,44 @@ class L7801L65Emitter:
             if resolved in self.rom_constants:
                 return self.rom_constants[resolved]
 
+        if isinstance(expr, c_ast.BinaryOp):
+            left = self._eval_const_u8(expr.left)
+            right = self._eval_const_u8(expr.right)
+            op = expr.op
+
+            if op == "+":
+                return (left + right) & 0xFF
+            if op == "-":
+                return (left - right) & 0xFF
+            if op == "*":
+                return (left * right) & 0xFF
+            if op == "&":
+                return left & right
+            if op == "|":
+                return left | right
+            if op == "^":
+                return left ^ right
+            if op == "<<":
+                return (left << (right & 0x07)) & 0xFF
+            if op == ">>":
+                return (left >> (right & 0x07)) & 0xFF
+            if op == "==":
+                return 1 if left == right else 0
+            if op == "!=":
+                return 1 if left != right else 0
+            if op == "<":
+                return 1 if left < right else 0
+            if op == ">":
+                return 1 if left > right else 0
+            if op == "<=":
+                return 1 if left <= right else 0
+            if op == ">=":
+                return 1 if left >= right else 0
+            if op == "&&":
+                return 1 if (left != 0 and right != 0) else 0
+            if op == "||":
+                return 1 if (left != 0 or right != 0) else 0
+
         coord = getattr(expr, "coord", "unknown")
         raise ConversionError(
             f"Initializer must be an 8-bit constant expression at {coord}"
@@ -2115,7 +2206,7 @@ class L7801L65Emitter:
             self._unsupported(call, "Only direct function calls are supported")
             return
 
-        callee = call.name.name
+        callee = self.API_ALIASES.get(call.name.name, call.name.name)
         params = self.function_params.get(callee)
 
         if callee in self.asset_functions or callee in self.asset_bulk_functions:
@@ -2143,12 +2234,12 @@ class L7801L65Emitter:
             self._alloc_symbol("scv_print_string__tmp_guard")
 
             self._emit_expr_to_a(args[0])
-            slot_x = self._alloc_symbol(self._arg_symbol_name(callee, "x"))
-            self._emit(f"    mov ({slot_x}),a")
+            src_slot_x = self._alloc_symbol(self._arg_symbol_name(callee, "x"))
+            self._emit(f"    mov ({src_slot_x}),a")
 
             self._emit_expr_to_a(args[1])
-            slot_y = self._alloc_symbol(self._arg_symbol_name(callee, "y"))
-            self._emit(f"    mov ({slot_y}),a")
+            src_slot_y = self._alloc_symbol(self._arg_symbol_name(callee, "y"))
+            self._emit(f"    mov ({src_slot_y}),a")
 
             # Inline literal strings as direct scv_print_char calls.
             # This avoids runtime string-loop side effects while preserving API ergonomics.
@@ -2162,21 +2253,21 @@ class L7801L65Emitter:
                 values = [ord(ch) & 0xFF for ch in decoded]
 
                 self.extern_functions.add("scv_print_char")
-                slot_row = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "row"))
-                slot_col = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "col"))
+                dst_slot_x = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "x"))
+                dst_slot_y = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "y"))
                 slot_ch = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "ch"))
 
                 for value in values:
-                    self._emit(f"    mov a,({slot_x})")
-                    self._emit(f"    mov ({slot_row}),a")
-                    self._emit(f"    mov a,({slot_y})")
-                    self._emit(f"    mov ({slot_col}),a")
+                    self._emit(f"    mov a,({src_slot_x})")
+                    self._emit(f"    mov ({dst_slot_x}),a")
+                    self._emit(f"    mov a,({src_slot_y})")
+                    self._emit(f"    mov ({dst_slot_y}),a")
                     self._emit(f"    mvi a,{self._fmt_imm(value)}")
                     self._emit(f"    mov ({slot_ch}),a")
                     self._emit("    call fn_scv_print_char")
-                    self._emit(f"    mov a,({slot_y})")
+                    self._emit(f"    mov a,({src_slot_x})")
                     self._emit("    adi a,0x01")
-                    self._emit(f"    mov ({slot_y}),a")
+                    self._emit(f"    mov ({src_slot_x}),a")
                 return
 
             rom_label: Optional[str] = None
@@ -2510,7 +2601,7 @@ class L7801L65Emitter:
     def _emit_binary(self, binary: c_ast.BinaryOp) -> None:
         op = binary.op
 
-        if op in {"+", "-", "&", "|", "^", "*"}:
+        if op in {"+", "-", "&", "|", "^", "*", "<<", ">>"}:
             if op == "*":
                 lhs_slot = self._alloc_symbol("mul__lhs")
                 rhs_slot = self._alloc_symbol("mul__rhs")
@@ -2547,6 +2638,14 @@ class L7801L65Emitter:
                 self._emit(f"    mov a,({acc_slot})")
                 return
 
+            if op == "<<":
+                self._emit_shift_left(binary.left, binary.right)
+                return
+
+            if op == ">>":
+                self._emit_shift_right(binary.left, binary.right)
+                return
+
             self._emit_expr_to_a(binary.left)
             self._emit("    mov b,a")
             self._emit_expr_to_a(binary.right)
@@ -2563,6 +2662,10 @@ class L7801L65Emitter:
                 self._emit("    ora a,b")
             elif op == "^":
                 self._emit("    xra a,b")
+            return
+
+        if op in {"&&", "||"}:
+            self._emit_logical(binary)
             return
 
         if op in {"==", "!=", "<", ">", "<=", ">="}:
@@ -2612,6 +2715,122 @@ class L7801L65Emitter:
             self._emit("    lti a,0")
             self._emit(f"    jr {true_label}")
             self._emit(f"    jmp {false_label}")
+
+        self._emit(f"@{true_label}")
+        self._emit("    mvi a,0x01")
+        self._emit(f"    jmp {end_label}")
+        self._emit(f"@{false_label}")
+        self._emit("    mvi a,0x00")
+        self._emit(f"@{end_label}")
+
+    def _emit_shift_left(self, left: c_ast.Node, right: c_ast.Node) -> None:
+        value_slot = self._alloc_symbol("shiftl__value")
+        count_slot = self._alloc_symbol("shiftl__count")
+        loop_label = self._new_label("shiftl_loop")
+        body_label = self._new_label("shiftl_body")
+        done_label = self._new_label("shiftl_done")
+
+        self._emit_expr_to_a(left)
+        self._emit(f"    mov ({value_slot}),a")
+        self._emit_expr_to_a(right)
+        self._emit("    ani a,0x07")
+        self._emit(f"    mov ({count_slot}),a")
+
+        self._emit(f"@{loop_label}")
+        self._emit(f"    mov a,({count_slot})")
+        self._emit("    eqi a,0")
+        self._emit(f"    jr {body_label}")
+        self._emit(f"    jmp {done_label}")
+
+        self._emit(f"@{body_label}")
+        self._emit(f"    mov a,({value_slot})")
+        self._emit("    add a,a")
+        self._emit(f"    mov ({value_slot}),a")
+        self._emit(f"    mov a,({count_slot})")
+        self._emit("    adi a,0xFF")
+        self._emit(f"    mov ({count_slot}),a")
+        self._emit(f"    jmp {loop_label}")
+
+        self._emit(f"@{done_label}")
+        self._emit(f"    mov a,({value_slot})")
+
+    def _emit_shift_right(self, left: c_ast.Node, right: c_ast.Node) -> None:
+        value_slot = self._alloc_symbol("shiftr__value")
+        count_slot = self._alloc_symbol("shiftr__count")
+        quot_slot = self._alloc_symbol("shiftr__quot")
+        outer_loop_label = self._new_label("shiftr_outer_loop")
+        outer_body_label = self._new_label("shiftr_outer_body")
+        outer_done_label = self._new_label("shiftr_outer_done")
+        inner_loop_label = self._new_label("shiftr_inner_loop")
+        inner_apply_label = self._new_label("shiftr_inner_apply")
+        inner_done_label = self._new_label("shiftr_inner_done")
+
+        self._emit_expr_to_a(left)
+        self._emit(f"    mov ({value_slot}),a")
+        self._emit_expr_to_a(right)
+        self._emit("    ani a,0x07")
+        self._emit(f"    mov ({count_slot}),a")
+
+        self._emit(f"@{outer_loop_label}")
+        self._emit(f"    mov a,({count_slot})")
+        self._emit("    eqi a,0")
+        self._emit(f"    jr {outer_body_label}")
+        self._emit(f"    jmp {outer_done_label}")
+
+        self._emit(f"@{outer_body_label}")
+        self._emit("    mvi a,0x00")
+        self._emit(f"    mov ({quot_slot}),a")
+
+        self._emit(f"@{inner_loop_label}")
+        self._emit(f"    mov a,({value_slot})")
+        self._emit("    mvi b,0x02")
+        self._emit("    sub a,b")
+        self._emit("    skc")
+        self._emit(f"    jmp {inner_apply_label}")
+        self._emit(f"    jmp {inner_done_label}")
+
+        self._emit(f"@{inner_apply_label}")
+        self._emit(f"    mov ({value_slot}),a")
+        self._emit(f"    mov a,({quot_slot})")
+        self._emit("    adi a,0x01")
+        self._emit(f"    mov ({quot_slot}),a")
+        self._emit(f"    jmp {inner_loop_label}")
+
+        self._emit(f"@{inner_done_label}")
+        self._emit(f"    mov a,({quot_slot})")
+        self._emit(f"    mov ({value_slot}),a")
+        self._emit(f"    mov a,({count_slot})")
+        self._emit("    adi a,0xFF")
+        self._emit(f"    mov ({count_slot}),a")
+        self._emit(f"    jmp {outer_loop_label}")
+
+        self._emit(f"@{outer_done_label}")
+        self._emit(f"    mov a,({value_slot})")
+
+    def _emit_logical(self, binary: c_ast.BinaryOp) -> None:
+        eval_right_label = self._new_label("logic_eval_right")
+        true_label = self._new_label("logic_true")
+        false_label = self._new_label("logic_false")
+        end_label = self._new_label("logic_end")
+
+        if binary.op == "&&":
+            self._emit_expr_to_a(binary.left)
+            self._emit("    nei a,0")
+            self._emit(f"    jmp {false_label}")
+            self._emit_expr_to_a(binary.right)
+            self._emit("    nei a,0")
+            self._emit(f"    jmp {false_label}")
+            self._emit(f"    jmp {true_label}")
+        else:
+            self._emit_expr_to_a(binary.left)
+            self._emit("    nei a,0")
+            self._emit(f"    jmp {eval_right_label}")
+            self._emit(f"    jmp {true_label}")
+            self._emit(f"@{eval_right_label}")
+            self._emit_expr_to_a(binary.right)
+            self._emit("    nei a,0")
+            self._emit(f"    jmp {false_label}")
+            self._emit(f"    jmp {true_label}")
 
         self._emit(f"@{true_label}")
         self._emit("    mvi a,0x01")
