@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Generate the Uridium streaming demo source and per-screen pattern assets."""
+"""Generate the Uridium streaming demo source and per-screen pattern assets.
+  This requires some explanation, one of the demos I was trying to make was a Uridium style ship scrolling background, so this exists to
+  make the tilemap.  I could never get it to quite work, I think the lack of memory, tiles and CPU speed was against me
+  but because it ALMOST worked, i'm leaving this in.  Better developers than me might succeed. I'm pretty sure there's a bunch
+  of optimisations that could be made in the code that shows and moves tiles and then this example might be doable.
+"""
 
 from __future__ import annotations
 
