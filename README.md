@@ -34,6 +34,8 @@ There are numerous examples, but they've kind of evolved with the project, so so
 
 This is a very small subset of C, it has some niceties like structs and enums, but it's missing a few important bits that can make writing a game a little trickier, like for,while and switch. I'm guessing i'll implement while next - just because it's most useful for a game loop, but for would be nice (although with very limited memory it might not be that useful).  Also, no actual headers are supported, there's no stdio, no stdlib.  I've implemented text writing, strlen and a limited sprintf command though.
 
+Basically I concentrated on stuff that I knew I used for Jurl.
+
 More information in the tools folder.
 
 But basically, create a c file, run it through c_to_l7801.py and (if that works) run the resultant .l7801 file through l7801.  That should get you a bin file that can be run on an SCV or an emulator.
