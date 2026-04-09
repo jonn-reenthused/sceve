@@ -13,8 +13,8 @@ int main(void) {
 
     if (scv_collision_result != 0) {
         scv_print_char(8, 8, 'H');
-        scv_print_char(8, 9, 'I');
-        scv_print_char(8, 10, 'T');
+        scv_print_char(9, 8, 'I');
+        scv_print_char(10, 8, 'T');
     }
 
     scv_hide_sprite(1);

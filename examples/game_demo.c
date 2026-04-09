@@ -8,6 +8,12 @@ int scv_pad1_state;
 int scv_pad2_state;
 int scv_collision_result;
 
+void showtext(void)
+{
+	scv_print_string(11, 0, "SCV SDK");
+	scv_print_string(12, 0, "TONSOMO");
+}
+
 int main(void) {
     int s1_x;
     int s1_y;
@@ -28,25 +34,24 @@ int main(void) {
     enemy_frame = 0;
     enemy_tick = 0;
 
-    scv_print_string(11, 0, "SCV SDK");
-    scv_print_string(12, 0, "TONSOMO");
+	showtext();
 
-    scv_print_char(0, 4, 'Y');
-    scv_print_char(0, 5, ':');
-    scv_print_char(0, 15, 'U');
-    scv_print_char(0, 16, ':');
-    scv_print_char(0, 18, 'D');
-    scv_print_char(0, 19, ':');
+    scv_print_char(4, 0, 'Y');
+    scv_print_char(5, 0, ':');
+    scv_print_char(15, 0, 'U');
+    scv_print_char(16, 0, ':');
+    scv_print_char(18, 0, 'D');
+    scv_print_char(19, 0, ':');
 
-    scv_print_char(5, 3, '@');
-    scv_print_char(1, 3, 'D');
-    scv_print_char(1, 4, 'R');
-    scv_print_char(1, 5, 'L');
-    scv_print_char(1, 6, 'U');
-    scv_print_char(1, 7, 'B');
-    scv_print_char(1, 8, '2');
-    scv_print_char(1, 9, 'B');
-    scv_print_char(1, 10, '2');
+    scv_print_char(3, 5, '@');
+    scv_print_char(3, 1, 'D');
+    scv_print_char(4, 1, 'R');
+    scv_print_char(5, 1, 'L');
+    scv_print_char(6, 1, 'U');
+    scv_print_char(7, 1, 'B');
+    scv_print_char(8, 1, '2');
+    scv_print_char(9, 1, 'B');
+    scv_print_char(10, 1, '2');
 
     scv_asset_player_load(0);
     scv_asset_enemy_0_load(1);
@@ -74,45 +79,45 @@ int main(void) {
 
         /* 0xFE scan group: left/up/button ; 0xFD scan group: right/down */
         if ((scv_pad1_state & 0x01) == 0) {
-            scv_print_char(2, 3, 'D');
+            scv_print_char(3, 2, 'D');
 			down = 1;
         } else {
-            scv_print_char(2, 3, '.');
+            scv_print_char(3, 2, '.');
 			down = 0;
         }
         if ((scv_pad1_state & 0x02) == 0) {
-            scv_print_char(2, 4, 'R');
+            scv_print_char(4, 2, 'R');
 			right = 1;
         } else {
-            scv_print_char(2, 4, '.');
+            scv_print_char(4, 2, '.');
 			right = 0;
         }
         if ((scv_pad2_state & 0x01) == 0) {
-            scv_print_char(2, 5, 'L');
+            scv_print_char(5, 2, 'L');
 			left = 1;
         } else {
-            scv_print_char(2, 5, '.');
+            scv_print_char(5, 2, '.');
 			left = 0;
         }
         if ((scv_pad2_state & 0x02) == 0) {
-            scv_print_char(2, 6, 'U');
+            scv_print_char(6, 2, 'U');
 			up = 1;
         } else {
-            scv_print_char(2, 6, '.');
+            scv_print_char(6, 2, '.');
 			up = 0;
         }
         if ((scv_pad2_state & 0x04) == 0) {
-            scv_print_char(2, 7, 'B');
+            scv_print_char(7, 2, 'B');
             p2_btn = 1;
         } else {
-            scv_print_char(2, 7, '.');
+            scv_print_char(7, 2, '.');
             p2_btn = 0;
         }
         if ((scv_pad1_state & 0x04) == 0) {
-            scv_print_char(2, 9, 'B');
+            scv_print_char(9, 2, 'B');
             p1_btn = 1;
         } else {
-            scv_print_char(2, 9, '.');
+            scv_print_char(9, 2, '.');
             p1_btn = 0;
         }
 
@@ -153,55 +158,55 @@ int main(void) {
 
         y_dbg = scv_get_hw_sprite_y(0);
         if ((y_dbg & 0x80) == 0) {
-            scv_print_char(0, 6, '0');
+            scv_print_char(6, 0, '0');
         } else {
-            scv_print_char(0, 6, '1');
+            scv_print_char(6, 0, '1');
         }
         if ((y_dbg & 0x40) == 0) {
-            scv_print_char(0, 7, '0');
+            scv_print_char(7, 0, '0');
         } else {
-            scv_print_char(0, 7, '1');
+            scv_print_char(7, 0, '1');
         }
         if ((y_dbg & 0x20) == 0) {
-            scv_print_char(0, 8, '0');
+            scv_print_char(8, 0, '0');
         } else {
-            scv_print_char(0, 8, '1');
+            scv_print_char(8, 0, '1');
         }
         if ((y_dbg & 0x10) == 0) {
-            scv_print_char(0, 9, '0');
+            scv_print_char(9, 0, '0');
         } else {
-            scv_print_char(0, 9, '1');
+            scv_print_char(9, 0, '1');
         }
         if ((y_dbg & 0x08) == 0) {
-            scv_print_char(0, 10, '0');
+            scv_print_char(10, 0, '0');
         } else {
-            scv_print_char(0, 10, '1');
+            scv_print_char(10, 0, '1');
         }
         if ((y_dbg & 0x04) == 0) {
-            scv_print_char(0, 11, '0');
+            scv_print_char(11, 0, '0');
         } else {
-            scv_print_char(0, 11, '1');
+            scv_print_char(11, 0, '1');
         }
         if ((y_dbg & 0x02) == 0) {
-            scv_print_char(0, 12, '0');
+            scv_print_char(12, 0, '0');
         } else {
-            scv_print_char(0, 12, '1');
+            scv_print_char(12, 0, '1');
         }
         if ((y_dbg & 0x01) == 0) {
-            scv_print_char(0, 13, '0');
+            scv_print_char(13, 0, '0');
         } else {
-            scv_print_char(0, 13, '1');
+            scv_print_char(13, 0, '1');
         }
 
         if (up == 1) {
-            scv_print_char(0, 17, '1');
+            scv_print_char(17, 0, '1');
         } else {
-            scv_print_char(0, 17, '0');
+            scv_print_char(17, 0, '0');
         }
         if (down == 1) {
-            scv_print_char(0, 20, '1');
+            scv_print_char(20, 0, '1');
         } else {
-            scv_print_char(0, 20, '0');
+            scv_print_char(20, 0, '0');
         }
     }
 }

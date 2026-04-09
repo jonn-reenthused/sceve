@@ -95,6 +95,10 @@ class L7801L65Emitter:
         "scv_draw_bg_tile": ["row", "col", "tile_id"],
         "scv_set_bg_scroll": ["scroll_x", "scroll_y"],
         "scv_draw_bg_tile_scrolled": ["row", "col", "tile_id"],
+        "scv_scroll_bg_right": [],
+        "scv_scroll_bg_left": [],
+        "scv_scroll_bg_down": [],
+        "scv_scroll_bg_up": [],
         "scv_set_sprite": ["id", "col", "row", "tile_id"],
         "scv_move_sprite": ["id", "col", "row"],
         "scv_hide_sprite": ["id"],
@@ -122,6 +126,8 @@ class L7801L65Emitter:
         "scv_read_pad2": [],
         "scv_read_input_scan": ["pa_mask"],
         "scv_stop_sound": [],
+        "scv_play_tone_raw": ["p1", "p2", "p3"],
+        "scv_play_tone_packet": ["pitch", "param"],
         "scv_check_collision": ["id_a", "id_b"],
         "scv_wait_vblank": [],
     }
@@ -454,6 +460,82 @@ class L7801L65Emitter:
             "    mov a,({fn}__arg_tile_id)",
             "    ani a,0x3F",
             "    stax (hl)",
+            "    ret",
+        ],
+        "scv_scroll_bg_right": [
+            "    lxi hl,0x31BE",
+            "    lxi de,0x31BF",
+            "    mvi b,0x0C",
+            "@{fn}_row",
+            "    mvi c,0x1F",
+            "@{fn}_byte",
+            "    ldax (hl)",
+            "    stax (de)",
+            "    dcx hl",
+            "    dcx de",
+            "    dcr c",
+            "    jre {fn}_byte",
+            "    dcx hl",
+            "    dcx de",
+            "    dcr b",
+            "    jre {fn}_row",
+            "    ret",
+        ],
+        "scv_scroll_bg_left": [
+            "    lxi hl,0x3041",
+            "    lxi de,0x3040",
+            "    mvi b,0x0C",
+            "@{fn}_row",
+            "    mvi c,0x1F",
+            "@{fn}_byte",
+            "    ldax (hl)",
+            "    stax (de)",
+            "    inx hl",
+            "    inx de",
+            "    dcr c",
+            "    jre {fn}_byte",
+            "    inx hl",
+            "    inx de",
+            "    dcr b",
+            "    jre {fn}_row",
+            "    ret",
+        ],
+        "scv_scroll_bg_down": [
+            "    lxi hl,0x319F",
+            "    lxi de,0x31BF",
+            "    mvi b,0x0B",
+            "@{fn}_row",
+            "    mvi c,0x1F",
+            "@{fn}_byte",
+            "    ldax (hl)",
+            "    stax (de)",
+            "    dcx hl",
+            "    dcx de",
+            "    dcr c",
+            "    jre {fn}_byte",
+            "    dcx hl",
+            "    dcx de",
+            "    dcr b",
+            "    jre {fn}_row",
+            "    ret",
+        ],
+        "scv_scroll_bg_up": [
+            "    lxi hl,0x3060",
+            "    lxi de,0x3040",
+            "    mvi b,0x0B",
+            "@{fn}_row",
+            "    mvi c,0x1F",
+            "@{fn}_byte",
+            "    ldax (hl)",
+            "    stax (de)",
+            "    inx hl",
+            "    inx de",
+            "    dcr c",
+            "    jre {fn}_byte",
+            "    inx hl",
+            "    inx de",
+            "    dcr b",
+            "    jre {fn}_row",
             "    ret",
         ],
         "scv_set_sprite": [
@@ -895,7 +977,7 @@ class L7801L65Emitter:
             "    ret",
         ],
         "scv_bios_clear_pattern_vram": [
-            "    calt 0x88",
+            "    call 0x0A4A",
             "    ret",
         ],
         "scv_bios_clear_hw_sprites": [
@@ -973,6 +1055,141 @@ class L7801L65Emitter:
             "    ei",
             "    ret",
         ],
+        "scv_play_tone_raw": [
+            "    lxi hl,0x3600",
+            "    di",
+            "    mvi b,0xFF",
+            "@{fn}_wv1",
+            "    skit f2",
+            "    jr {fn}_wv1_wait",
+            "    jmp {fn}_wv1_done",
+            "@{fn}_wv1_wait",
+            "    dcr b",
+            "    jre {fn}_wv1",
+            "    jmp {fn}_wv1_done",
+            "@{fn}_wv1_done",
+            "    skit f1",
+            "    nop",
+            "    mvi a,0x02",
+            "    stax (hl)",
+            "    mvi b,0xFF",
+            "@{fn}_wf0",
+            "    skit f1",
+            "    jr {fn}_wf0_wait",
+            "    jmp {fn}_wf0_done",
+            "@{fn}_wf0_wait",
+            "    dcr b",
+            "    jre {fn}_wf0",
+            "    jmp {fn}_wf0_done",
+            "@{fn}_wf0_done",
+            "    mov a,({fn}__arg_p1)",
+            "    stax (hl)",
+            "    mvi b,0xFF",
+            "@{fn}_wf1",
+            "    skit f1",
+            "    jr {fn}_wf1_wait",
+            "    jmp {fn}_wf1_done",
+            "@{fn}_wf1_wait",
+            "    dcr b",
+            "    jre {fn}_wf1",
+            "    jmp {fn}_wf1_done",
+            "@{fn}_wf1_done",
+            "    mov a,({fn}__arg_p2)",
+            "    stax (hl)",
+            "    mvi b,0xFF",
+            "@{fn}_wf2",
+            "    skit f1",
+            "    jr {fn}_wf2_wait",
+            "    jmp {fn}_wf2_done",
+            "@{fn}_wf2_wait",
+            "    dcr b",
+            "    jre {fn}_wf2",
+            "    jmp {fn}_wf2_done",
+            "@{fn}_wf2_done",
+            "    mov a,({fn}__arg_p3)",
+            "    stax (hl)",
+            "    mvi b,0xFF",
+            "@{fn}_wv2",
+            "    skit f2",
+            "    jr {fn}_wv2_wait",
+            "    jmp {fn}_wv2_done",
+            "@{fn}_wv2_wait",
+            "    dcr b",
+            "    jre {fn}_wv2",
+            "    jmp {fn}_wv2_done",
+            "@{fn}_wv2_done",
+            "    ei",
+            "    ret",
+        ],
+        "scv_play_tone_packet": [
+            "    lxi hl,0x3600",
+            "    di",
+            "    mvi b,0xFF",
+            "@{fn}_wv1",
+            "    skit f2",
+            "    jr {fn}_wv1_wait",
+            "    jmp {fn}_wv1_done",
+            "@{fn}_wv1_wait",
+            "    dcr b",
+            "    jre {fn}_wv1",
+            "    jmp {fn}_wv1_done",
+            "@{fn}_wv1_done",
+            "    skit f1",
+            "    nop",
+            "    mvi a,0x02",
+            "    stax (hl)",
+            "    mvi b,0xFF",
+            "@{fn}_wf0",
+            "    skit f1",
+            "    jr {fn}_wf0_wait",
+            "    jmp {fn}_wf0_done",
+            "@{fn}_wf0_wait",
+            "    dcr b",
+            "    jre {fn}_wf0",
+            "    jmp {fn}_wf0_done",
+            "@{fn}_wf0_done",
+            "    mvi a,0xA0",
+            "    stax (hl)",
+            "    mvi b,0xFF",
+            "@{fn}_wf1",
+            "    skit f1",
+            "    jr {fn}_wf1_wait",
+            "    jmp {fn}_wf1_done",
+            "@{fn}_wf1_wait",
+            "    dcr b",
+            "    jre {fn}_wf1",
+            "    jmp {fn}_wf1_done",
+            "@{fn}_wf1_done",
+            "    mov a,({fn}__arg_pitch)",
+            "    stax (hl)",
+            "    mvi b,0xFF",
+            "@{fn}_wf2",
+            "    skit f1",
+            "    jr {fn}_wf2_wait",
+            "    jmp {fn}_wf2_done",
+            "@{fn}_wf2_wait",
+            "    dcr b",
+            "    jre {fn}_wf2",
+            "    jmp {fn}_wf2_done",
+            "@{fn}_wf2_done",
+            "    mov a,({fn}__arg_param)",
+            "    eqi a,0",
+            "    skz",
+            "    mvi a,0x10",
+            "    stax (hl)",
+            "    mvi b,0xFF",
+            "@{fn}_wv2",
+            "    skit f2",
+            "    jr {fn}_wv2_wait",
+            "    jmp {fn}_wv2_done",
+            "@{fn}_wv2_wait",
+            "    dcr b",
+            "    jre {fn}_wv2",
+            "    jmp {fn}_wv2_done",
+            "@{fn}_wv2_done",
+            "    ei",
+            "    ret",
+        ],
         "scv_check_collision": [
             "    mov a,({fn}__arg_id_a)",
             "    add a,a",
@@ -1013,9 +1230,12 @@ class L7801L65Emitter:
             "    ret",
         ],
         "scv_wait_vblank": [
-            "@{fn}_wait",
+            "@{fn}_wait_clear",
+            "    sknit f2",
+            "    jr {fn}_wait_clear",
+            "@{fn}_wait_set",
             "    skit f2",
-            "    jr {fn}_wait",
+            "    jr {fn}_wait_set",
             "    ret",
         ],
     }
@@ -1095,7 +1315,7 @@ class L7801L65Emitter:
                 "    ei",
                 "    calt 0x8C",
                 "    lxi hl,0x3400",
-                "    mvi a,0xF0",
+                "    mvi a,0xF4",
                 "    staxi (hl)",
                 "    mvi a,0x00",
                 "    staxi (hl)",
@@ -2241,17 +2461,7 @@ class L7801L65Emitter:
             src_slot_y = self._alloc_symbol(self._arg_symbol_name(callee, "y"))
             self._emit(f"    mov ({src_slot_y}),a")
 
-            # Inline literal strings as direct scv_print_char calls.
-            # This avoids runtime string-loop side effects while preserving API ergonomics.
-            if isinstance(args[2], c_ast.Constant) and args[2].type == "string":
-                raw = args[2].value
-                if len(raw) < 2 or raw[0] != '"' or raw[-1] != '"':
-                    coord = getattr(args[2], "coord", "unknown")
-                    raise ConversionError(f"Unsupported string literal {raw} at {coord}")
-
-                decoded = bytes(raw[1:-1], "utf-8").decode("unicode_escape")
-                values = [ord(ch) & 0xFF for ch in decoded]
-
+            def emit_inline_chars(values: List[int]) -> None:
                 self.extern_functions.add("scv_print_char")
                 dst_slot_x = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "x"))
                 dst_slot_y = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "y"))
@@ -2268,25 +2478,38 @@ class L7801L65Emitter:
                     self._emit(f"    mov a,({src_slot_x})")
                     self._emit("    adi a,0x01")
                     self._emit(f"    mov ({src_slot_x}),a")
-                return
 
-            rom_label: Optional[str] = None
-            ram_label: Optional[str] = None
-            
-            # Check if third argument is a string literal
+            # Inline literal strings and ROM-backed const arrays as direct
+            # scv_print_char calls. This avoids reliance on volatile DE across
+            # runtime string loops.
             if isinstance(args[2], c_ast.Constant) and args[2].type == "string":
                 raw = args[2].value
                 if len(raw) < 2 or raw[0] != '"' or raw[-1] != '"':
                     coord = getattr(args[2], "coord", "unknown")
                     raise ConversionError(f"Unsupported string literal {raw} at {coord}")
+
                 decoded = bytes(raw[1:-1], "utf-8").decode("unicode_escape")
-                values = [ord(ch) & 0xFF for ch in decoded]
-                values.append(0)
-                tmp_alias = f"scv_print_string_tmp_{self.label_counter}"
-                self.label_counter += 1
-                self._register_rom_data_block(tmp_alias, values)
-                rom_label = self.rom_array_labels[tmp_alias]
-            elif isinstance(args[2], c_ast.ID):
+                emit_inline_chars([ord(ch) & 0xFF for ch in decoded])
+                return
+
+            if isinstance(args[2], c_ast.ID):
+                rom_alias = self._resolve_rom_array_alias(args[2].name)
+                if rom_alias is not None:
+                    values = self.rom_array_values[rom_alias]
+                    inline_values: List[int] = []
+                    for v in values:
+                        if v == 0:
+                            break
+                        inline_values.append(v & 0xFF)
+                        if len(inline_values) >= 0x20:
+                            break
+                    emit_inline_chars(inline_values)
+                return
+
+            rom_label: Optional[str] = None
+            ram_label: Optional[str] = None
+
+            if isinstance(args[2], c_ast.ID):
                 alias = self._resolve_rom_array_alias(args[2].name)
                 if alias is not None:
                     rom_label = self.rom_array_labels[alias]
