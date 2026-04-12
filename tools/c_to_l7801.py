@@ -76,6 +76,14 @@ class RomDataBlock:
 class L7801L65Emitter:
     STACK_INIT = 0xFFF0
 
+    # Keep these APIs on dedicated arg slots to avoid clobbering during nested/inline flows.
+    NON_SHARED_API_ARG_FUNCTIONS: Set[str] = {
+        "scv_print_string",
+        "scv_print_char",
+        "sprintf",
+        "strlen",
+    }
+
     API_ALIASES: Dict[str, str] = {
         "scv_bios_add16": "scv_bios_add16_hi",
         "scv_bios_sub16": "scv_bios_sub16_hi",
@@ -90,7 +98,7 @@ class L7801L65Emitter:
         "strlen": ["str"],
         "sprintf": ["dst", "fmt", "value"],
         "scv_print_char": ["x", "y", "ch"],
-        "scv_print_string": ["x", "y", "str"],
+        "scv_print_string": ["x", "y"],
         "scv_draw_tile": ["row", "col", "tile_id"],
         "scv_draw_bg_tile": ["row", "col", "tile_id"],
         "scv_set_bg_scroll": ["scroll_x", "scroll_y"],
@@ -1760,7 +1768,7 @@ class L7801L65Emitter:
                 impl = self.SCV_API_IMPLS.get(fn)
             if impl is not None:
                 for line in impl:
-                    self._emit(line.format(fn=fn))
+                    self._emit(self._format_impl_line(fn, line))
             else:
                 self._emit(f"    -- TODO implement {fn}")
                 self._emit("    ret")
@@ -2108,7 +2116,26 @@ class L7801L65Emitter:
         # for their single pattern_slot parameter to avoid RAM symbol explosion.
         if fn_name.startswith("scv_asset_") and param_name == "pattern_slot":
             return "scv_asset__arg_pattern_slot"
+
+        # Share slots by argument position for most SCV APIs.
+        api_params = self.SCV_API_PARAMS.get(fn_name)
+        if (
+            api_params is not None
+            and fn_name not in self.NON_SHARED_API_ARG_FUNCTIONS
+            and param_name in api_params
+        ):
+            return f"scv_api__arg_{api_params.index(param_name)}"
+
         return f"{fn_name}__arg_{param_name}"
+
+    def _format_impl_line(self, fn_name: str, line: str) -> str:
+        rendered = line.format(fn=fn_name)
+        for param_name in self.function_params.get(fn_name, []):
+            default_sym = f"{fn_name}__arg_{param_name}"
+            mapped_sym = self._arg_symbol_name(fn_name, param_name)
+            if mapped_sym != default_sym:
+                rendered = rendered.replace(default_sym, mapped_sym)
+        return rendered
 
     def _emit(self, line: str = "") -> None:
         self.lines.append(line)
@@ -2341,9 +2368,22 @@ class L7801L65Emitter:
             coord = getattr(decl, "coord", "unknown")
             raise ConversionError(f"Expected array declaration at {coord}")
 
+        dims: List[Optional[int]] = []
+        t = decl.type
+        while isinstance(t, c_ast.ArrayDecl):
+            if t.dim is None:
+                dims.append(None)
+            else:
+                dims.append(self._eval_const_u8(t.dim))
+            t = t.type
+
         expected_len: Optional[int] = None
-        if decl.type.dim is not None:
-            expected_len = self._eval_const_u8(decl.type.dim)
+        if dims and all(dim is not None for dim in dims):
+            total = 1
+            for dim in dims:
+                assert dim is not None
+                total *= dim
+            expected_len = total
 
         if init is None:
             coord = getattr(decl, "coord", "unknown")
@@ -2353,7 +2393,7 @@ class L7801L65Emitter:
 
         values: List[int]
         if isinstance(init, c_ast.InitList):
-            values = [self._eval_const_u8(expr) for expr in (init.exprs or [])]
+            values = self._flatten_const_array_init_u8(init)
         elif isinstance(init, c_ast.Constant) and init.type == "string":
             raw = init.value
             if len(raw) < 2 or raw[0] != '"' or raw[-1] != '"':
@@ -2377,6 +2417,15 @@ class L7801L65Emitter:
             if len(values) < expected_len:
                 values.extend([0] * (expected_len - len(values)))
 
+        return values
+
+    def _flatten_const_array_init_u8(self, init: c_ast.InitList) -> List[int]:
+        values: List[int] = []
+        for expr in (init.exprs or []):
+            if isinstance(expr, c_ast.InitList):
+                values.extend(self._flatten_const_array_init_u8(expr))
+            else:
+                values.append(self._eval_const_u8(expr))
         return values
 
     def _register_rom_data_block(self, alias_name: str, values: List[int]) -> None:
@@ -2750,30 +2799,28 @@ class L7801L65Emitter:
 
         callee = self.API_ALIASES.get(call.name.name, call.name.name)
         params = self.function_params.get(callee)
-
-        if callee in self.asset_functions or callee in self.asset_bulk_functions:
-            self.extern_functions.add(callee)
-        elif callee in self.function_params and callee not in self.defined_functions:
-            self.extern_functions.add(callee)
-
-        if params is None and (callee in self.asset_functions or callee in self.asset_bulk_functions):
-            params = ["pattern_slot"]
-            self.function_params[callee] = params
-            self.extern_functions.add(callee)
-        if params is None and callee in self.SCV_API_PARAMS:
-            params = self.SCV_API_PARAMS[callee]
-            self.function_params[callee] = params
-            self.extern_functions.add(callee)
         args = list(call.args.exprs) if call.args and call.args.exprs else []
+
+        if callee != "scv_print_string":
+            if callee in self.asset_functions or callee in self.asset_bulk_functions:
+                self.extern_functions.add(callee)
+            elif callee in self.function_params and callee not in self.defined_functions:
+                self.extern_functions.add(callee)
+
+            if params is None and (callee in self.asset_functions or callee in self.asset_bulk_functions):
+                params = ["pattern_slot"]
+                self.function_params[callee] = params
+                self.extern_functions.add(callee)
+            if params is None and callee in self.SCV_API_PARAMS:
+                params = self.SCV_API_PARAMS[callee]
+                self.function_params[callee] = params
+                self.extern_functions.add(callee)
 
         if callee == "scv_print_string":
             if len(args) != 3:
                 raise ConversionError(
                     f"Call arity mismatch for {callee}: expected 3, got {len(args)}"
                 )
-
-            # Runtime scv_print_string implementation uses this guard symbol.
-            self._alloc_symbol("scv_print_string__tmp_guard")
 
             self._emit_expr_to_a(args[0])
             src_slot_x = self._alloc_symbol(self._arg_symbol_name(callee, "x"))
@@ -2826,7 +2873,7 @@ class L7801L65Emitter:
                         if len(inline_values) >= 0x20:
                             break
                     emit_inline_chars(inline_values)
-                return
+                    return
 
             rom_label: Optional[str] = None
             ram_label: Optional[str] = None
@@ -2850,6 +2897,14 @@ class L7801L65Emitter:
                 self._emit(f"    lxi de,{rom_label}")
             else:
                 self._emit(f"    lxi de,{ram_label}")
+
+            # Only reserve runtime scv_print_string support when we actually emit a call.
+            if params is None:
+                params = self.SCV_API_PARAMS[callee]
+                self.function_params[callee] = params
+            self.extern_functions.add(callee)
+            self._alloc_symbol("scv_print_string__tmp_guard")
+
             self._emit(f"    call fn_{callee}")
             return
 
@@ -3148,9 +3203,9 @@ class L7801L65Emitter:
 
         if op in {"+", "-", "&", "|", "^", "*", "<<", ">>"}:
             if op == "*":
-                lhs_slot = self._alloc_symbol("mul__lhs")
-                rhs_slot = self._alloc_symbol("mul__rhs")
-                acc_slot = self._alloc_symbol("mul__acc")
+                lhs_slot = self._alloc_symbol("arith__tmp0")
+                rhs_slot = self._alloc_symbol("arith__tmp1")
+                acc_slot = self._alloc_symbol("arith__tmp2")
                 loop_label = self._new_label("mul_loop")
                 body_label = self._new_label("mul_body")
                 done_label = self._new_label("mul_done")
@@ -3269,8 +3324,8 @@ class L7801L65Emitter:
         self._emit(f"@{end_label}")
 
     def _emit_shift_left(self, left: c_ast.Node, right: c_ast.Node) -> None:
-        value_slot = self._alloc_symbol("shiftl__value")
-        count_slot = self._alloc_symbol("shiftl__count")
+        value_slot = self._alloc_symbol("arith__tmp0")
+        count_slot = self._alloc_symbol("arith__tmp1")
         loop_label = self._new_label("shiftl_loop")
         body_label = self._new_label("shiftl_body")
         done_label = self._new_label("shiftl_done")
@@ -3300,9 +3355,9 @@ class L7801L65Emitter:
         self._emit(f"    mov a,({value_slot})")
 
     def _emit_shift_right(self, left: c_ast.Node, right: c_ast.Node) -> None:
-        value_slot = self._alloc_symbol("shiftr__value")
-        count_slot = self._alloc_symbol("shiftr__count")
-        quot_slot = self._alloc_symbol("shiftr__quot")
+        value_slot = self._alloc_symbol("arith__tmp0")
+        count_slot = self._alloc_symbol("arith__tmp1")
+        quot_slot = self._alloc_symbol("arith__tmp2")
         outer_loop_label = self._new_label("shiftr_outer_loop")
         outer_body_label = self._new_label("shiftr_outer_body")
         outer_done_label = self._new_label("shiftr_outer_done")
