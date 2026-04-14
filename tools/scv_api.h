@@ -46,6 +46,28 @@
 #define SCV_API_H
 
 /* ----------------------------------------------------------------
+ * Hardware colour indices (0-15)
+ * Use these with hardware sprite and tile colour parameters.
+ * ---------------------------------------------------------------- */
+enum ScvColor {
+    SCV_BLACK		= 1,
+    SCV_DKBLUE		= 2,
+    SCV_PURPLE		= 3,
+    SCV_GREEN		= 4,
+    SCV_LTGREEN		= 5,
+    SCV_CYAN		= 6,
+    SCV_DKGREEN		= 7,
+    SCV_RED			= 8,
+    SCV_ORANGE		= 9,
+    SCV_PINK		= 10,
+    SCV_SALMON		= 11,
+    SCV_YELLOW		= 12,
+    SCV_DKYELLOW	= 13,
+    SCV_GREY		= 14,
+    SCV_WHITE		= 15
+};
+
+/* ----------------------------------------------------------------
  * Text output
  * Print ASCII character ch at character position (row, col).
  * row: 0-11;  col: 0-31
@@ -89,10 +111,20 @@ extern int sprintf(char *dst, char *fmt, int value);
  * scv_set_bg_scroll sets background scroll offsets (x wraps 0..31,
  * y wraps 0..11).
  * scv_draw_bg_tile_scrolled draws using those offsets.
+ *
+ * scv_load_bg_array(pattern_slot, src_array, pattern_count):
+ *   Bulk-copy contiguous pattern bytes into the background-sprite
+ *   pattern bank used by scv_set_hw_sprite_raw (VRAM base 0x2000).
+ *   - pattern_slot: destination slot 0..63
+ *   - src_array: ROM or RAM byte array identifier
+ *   - pattern_count: number of 32-byte patterns to copy
+ *   Total copied bytes = pattern_count * 32.
  * ---------------------------------------------------------------- */
 extern void scv_draw_tile(int row, int col, int tile_id);
 extern void scv_draw_bg_tile(int row, int col, int tile_id);
+extern int scv_get_bg_tile(int row, int col);
 extern void scv_set_bg_scroll(int scroll_x, int scroll_y);
+extern void scv_load_bg_array(int pattern_slot, char *src_array, int pattern_count);
 extern void scv_draw_bg_tile_scrolled(int row, int col, int tile_id);
 
 /* Efficient incremental background scrolling (Sky Kid-inspired):
@@ -195,6 +227,12 @@ extern void svc_bios_clear_hw_sprites(void);
  * SCV pads are matrix-scanned in two groups. Call both read functions
  * each frame, then combine bits from scv_pad1_state/scv_pad2_state.
  *
+ * Pad-state helpers return 1 when the named control is pressed, else 0.
+ * They accept the already-read scan byte so callers do not need to know
+ * the active-low bit mask:
+ *   - pass scv_pad2_state for P1 left/up/fire1 and P2 left/up/fire1
+ *   - pass scv_pad1_state for P1 right/down/fire2 and P2 right/down/fire2
+ *
  * Keypad helpers provide a higher-level decoded view of the numeric pad:
  *   scv_read_keypad_number() returns 0 for no key, 1..9 for digits,
  *   10 for 0, 11 for CLEAR, and 12 for ENTER.
@@ -205,6 +243,18 @@ extern void svc_bios_clear_hw_sprites(void);
 extern void scv_read_pad1(void);
 extern void scv_read_pad2(void);
 extern int scv_read_input_scan(int pa_mask);
+extern int scv_is_p1_left_pressed(int pad_state);
+extern int scv_is_p1_up_pressed(int pad_state);
+extern int scv_is_p1_right_pressed(int pad_state);
+extern int scv_is_p1_down_pressed(int pad_state);
+extern int scv_is_p1_fire1_pressed(int pad_state);
+extern int scv_is_p1_fire2_pressed(int pad_state);
+extern int scv_is_p2_left_pressed(int pad_state);
+extern int scv_is_p2_up_pressed(int pad_state);
+extern int scv_is_p2_right_pressed(int pad_state);
+extern int scv_is_p2_down_pressed(int pad_state);
+extern int scv_is_p2_fire1_pressed(int pad_state);
+extern int scv_is_p2_fire2_pressed(int pad_state);
 extern int scv_read_keypad_number(void);
 extern int scv_read_keypad_char(void);
 
@@ -251,6 +301,17 @@ extern void scv_play_tone_packet(int pitch, int param);
  * ---------------------------------------------------------------- */
 extern void scv_check_collision(int id_a, int id_b);
 extern int scv_collision_result;
+
+/* ----------------------------------------------------------------
+ * uPD7801 Timer helpers
+ *
+ * scv_start_timer(count) loads TM0 with count, clears TM1,
+ * and starts the timer (STM).
+ *
+ * scv_timer_expired() returns 1 when timer flag FT is set, else 0.
+ * ---------------------------------------------------------------- */
+extern void scv_start_timer(int count);
+extern int scv_timer_expired(void);
 
 /* ----------------------------------------------------------------
  * VBlank synchronisation

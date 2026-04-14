@@ -77,43 +77,42 @@ int main(void) {
             scv_set_hw_sprite_frame(1, 1, enemy_frame);
         }
 
-        /* 0xFE scan group: left/up/button ; 0xFD scan group: right/down */
-        if ((scv_pad1_state & 0x01) == 0) {
+        if (scv_is_p1_down_pressed(scv_pad1_state)) {
             scv_print_char(3, 2, 'D');
 			down = 1;
         } else {
             scv_print_char(3, 2, '.');
 			down = 0;
         }
-        if ((scv_pad1_state & 0x02) == 0) {
+        if (scv_is_p1_right_pressed(scv_pad1_state)) {
             scv_print_char(4, 2, 'R');
 			right = 1;
         } else {
             scv_print_char(4, 2, '.');
 			right = 0;
         }
-        if ((scv_pad2_state & 0x01) == 0) {
+        if (scv_is_p1_left_pressed(scv_pad2_state)) {
             scv_print_char(5, 2, 'L');
 			left = 1;
         } else {
             scv_print_char(5, 2, '.');
 			left = 0;
         }
-        if ((scv_pad2_state & 0x02) == 0) {
+        if (scv_is_p1_up_pressed(scv_pad2_state)) {
             scv_print_char(6, 2, 'U');
 			up = 1;
         } else {
             scv_print_char(6, 2, '.');
 			up = 0;
         }
-        if ((scv_pad2_state & 0x04) == 0) {
+        if (scv_is_p1_fire1_pressed(scv_pad2_state)) {
             scv_print_char(7, 2, 'B');
             p2_btn = 1;
         } else {
             scv_print_char(7, 2, '.');
             p2_btn = 0;
         }
-        if ((scv_pad1_state & 0x04) == 0) {
+        if (scv_is_p1_fire2_pressed(scv_pad1_state)) {
             scv_print_char(9, 2, 'B');
             p1_btn = 1;
         } else {

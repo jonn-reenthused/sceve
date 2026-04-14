@@ -101,7 +101,9 @@ class L7801L65Emitter:
         "scv_print_string": ["x", "y"],
         "scv_draw_tile": ["row", "col", "tile_id"],
         "scv_draw_bg_tile": ["row", "col", "tile_id"],
+        "scv_get_bg_tile": ["row", "col"],
         "scv_set_bg_scroll": ["scroll_x", "scroll_y"],
+        "scv_load_bg_array": ["pattern_slot", "pattern_count"],
         "scv_draw_bg_tile_scrolled": ["row", "col", "tile_id"],
         "scv_scroll_bg_right": [],
         "scv_scroll_bg_left": [],
@@ -139,7 +141,24 @@ class L7801L65Emitter:
         "scv_play_tone_raw": ["p1", "p2", "p3"],
         "scv_play_tone_packet": ["pitch", "param"],
         "scv_check_collision": ["id_a", "id_b"],
+        "scv_start_timer": ["count"],
+        "scv_timer_expired": [],
         "scv_wait_vblank": [],
+    }
+
+    PAD_BOOL_HELPERS: Dict[str, int] = {
+        "scv_is_p1_left_pressed": 0x01,
+        "scv_is_p1_up_pressed": 0x02,
+        "scv_is_p1_fire1_pressed": 0x04,
+        "scv_is_p1_right_pressed": 0x02,
+        "scv_is_p1_down_pressed": 0x01,
+        "scv_is_p1_fire2_pressed": 0x04,
+        "scv_is_p2_left_pressed": 0x08,
+        "scv_is_p2_up_pressed": 0x10,
+        "scv_is_p2_fire1_pressed": 0x20,
+        "scv_is_p2_right_pressed": 0x10,
+        "scv_is_p2_down_pressed": 0x08,
+        "scv_is_p2_fire2_pressed": 0x20,
     }
 
     SCV_API_IMPLS: Dict[str, List[str]] = {
@@ -396,6 +415,27 @@ class L7801L65Emitter:
             "    stax (hl)",
             "    ret",
         ],
+        "scv_get_bg_tile": [
+            "    mvi h,0x30",
+            "    mvi l,0x40",
+            "    mov b,({fn}__arg_row)",
+            "@{fn}_row_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_col_step",
+            "    adi l,0x20",
+            "    aci h,0",
+            "    dcr b",
+            "    jre {fn}_row_loop",
+            "@{fn}_col_step",
+            "    mov a,({fn}__arg_col)",
+            "    adi a,0x03",
+            "    add l,a",
+            "    aci h,0",
+            "    ldax (hl)",
+            "    ani a,0x3F",
+            "    ret",
+        ],
         "scv_set_bg_scroll": [
             "    mov a,({fn}__arg_scroll_x)",
             "    ani a,0x1F",
@@ -415,6 +455,43 @@ class L7801L65Emitter:
             "@{fn}_wrap_y_done",
             "    mov a,c",
             "    mov (scv_bg_scroll_y),a",
+            "    ret",
+        ],
+        "scv_load_bg_array": [
+            "    mvi h,0x20",
+            "    mvi l,0x00",
+            "    mov a,({fn}__arg_pattern_slot)",
+            "    ani a,0x3F",
+            "    mov b,a",
+            "@{fn}_slot_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_slot_done",
+            "    mvi a,0x20",
+            "    add l,a",
+            "    aci h,0",
+            "    dcr b",
+            "    jre {fn}_slot_loop",
+            "@{fn}_slot_done",
+            "    mov a,({fn}__arg_pattern_count)",
+            "    mov c,a",
+            "@{fn}_outer_loop",
+            "    mov a,c",
+            "    nei a,0",
+            "    jr {fn}_outer_done",
+            "    mvi b,0x20",
+            "@{fn}_copy_loop",
+            "    ldax (de)",
+            "    stax (hl)",
+            "    inx de",
+            "    inx hl",
+            "    dcr b",
+            "    jre {fn}_copy_loop",
+            "    mov a,c",
+            "    adi a,0xFF",
+            "    mov c,a",
+            "    jmp {fn}_outer_loop",
+            "@{fn}_outer_done",
             "    ret",
         ],
         "scv_draw_bg_tile_scrolled": [
@@ -699,9 +776,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    mov a,({fn}__arg_y)",
             "    staxi (hl)",
             "    mov a,({fn}__arg_colour)",
@@ -720,9 +803,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    mov a,({fn}__arg_y)",
             "    staxi (hl)",
             "    mov a,({fn}__arg_colour)",
@@ -739,9 +828,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    mvi a,0x00",
             "    staxi (hl)",
             "    staxi (hl)",
@@ -754,9 +849,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    mov a,({fn}__arg_y)",
             "    staxi (hl)",
             "    inx hl",
@@ -769,9 +870,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    inx hl",
             "    inx hl",
             "    inx hl",
@@ -787,9 +894,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    inx hl",
             "    mov a,({fn}__arg_colour)",
             "    stax (hl)",
@@ -810,9 +923,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    inx hl",
             "    inx hl",
             "    inx hl",
@@ -835,9 +954,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    mov a,({fn}__arg_y)",
             "    staxi (hl)",
             "    mov a,({fn}__arg_colour)",
@@ -864,9 +989,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    inx hl",
             "    inx hl",
             "    ldax (hl)",
@@ -890,9 +1021,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    inx hl",
             "    inx hl",
             "    ldax (hl)",
@@ -916,9 +1053,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    ldax (hl)",
             "    mov b,a",
             "    mov a,({fn}__arg_min_y)",
@@ -940,9 +1083,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    ldax (hl)",
             "    mov b,a",
             "    mov a,({fn}__arg_max_y)",
@@ -964,9 +1113,15 @@ class L7801L65Emitter:
             "    add a,a",
             "    add a,a",
             "    mov l,a",
-            "    mvi a,0x32",
-            "    aci a,0",
-            "    mov h,a",
+            "    mov a,({fn}__arg_id)",
+            "    ani a,0x40",
+            "    eqi a,0",
+            "    jmp {fn}_id_hi",
+            "    mvi h,0x32",
+            "    jmp {fn}_id_ready",
+            "@{fn}_id_hi",
+            "    mvi h,0x33",
+            "@{fn}_id_ready",
             "    ldax (hl)",
             "    ret",
         ],
@@ -1559,6 +1714,23 @@ class L7801L65Emitter:
             "    mov (scv_collision_result),a",
             "    ret",
         ],
+        "scv_start_timer": [
+            "    mov a,({fn}__arg_count)",
+            "    mov tm0,a",
+            "    mvi a,0x01",  # Set TM1 to 1 instead of 0
+            "    mov tm1,a",
+            "    stm",
+            "    ret",
+        ],
+        "scv_timer_expired": [
+            "    skit ft",
+            "    jmp {fn}_not_expired",
+            "    mvi a,0x01",
+            "    ret",
+            "@{fn}_not_expired",
+            "    mvi a,0x00",
+            "    ret",
+        ],
         "scv_wait_vblank": [
             "@{fn}_wait_clear",
             "    sknit f2",
@@ -1569,6 +1741,22 @@ class L7801L65Emitter:
             "    ret",
         ],
     }
+
+    for _fn, _mask in PAD_BOOL_HELPERS.items():
+        SCV_API_PARAMS[_fn] = ["pad_state"]
+        SCV_API_IMPLS[_fn] = [
+            "    mov a,({fn}__arg_pad_state)",
+            f"    ani a,0x{_mask:02X}",
+            "    eqi a,0",
+            "    jmp {fn}_not_pressed",
+            "    jmp {fn}_pressed",
+            "@{fn}_not_pressed",
+            "    mvi a,0x00",
+            "    ret",
+            "@{fn}_pressed",
+            "    mvi a,0x01",
+            "    ret",
+        ]
 
     def __init__(self, strict: bool = True, ram_base: int = 0xFF80) -> None:
         self.strict = strict
@@ -1582,6 +1770,7 @@ class L7801L65Emitter:
         self.defined_functions: Set[str] = set()
         self.extern_functions: Set[str] = set()
         self.label_counter = 0
+        self.loop_end_labels: List[str] = []
         self.source_path: Optional[Path] = None
         self.asset_directives: List[AssetDirective] = []
         self.asset_functions: Dict[str, AssetFunction] = {}
@@ -1591,11 +1780,18 @@ class L7801L65Emitter:
         self.rom_data_blocks: List[RomDataBlock] = []
         self.rom_array_labels: Dict[str, str] = {}
         self.rom_array_lengths: Dict[str, int] = {}
+        self.rom_array_dims: Dict[str, List[int]] = {}  # For multi-dimensional arrays
         self.rom_array_values: Dict[str, List[int]] = {}
         self.ram_array_labels: Dict[str, str] = {}
         self.ram_array_lengths: Dict[str, int] = {}
+        self.ram_array_byte_lengths: Dict[str, int] = {}
+        self.ram_array_element_sizes: Dict[str, int] = {}
+        self.ram_array_struct_types: Dict[str, str] = {}
         self.struct_defs: Dict[str, List[str]] = {}
+        self.struct_sizes: Dict[str, int] = {}  # Track struct sizes for array[i].field access
+        self.struct_field_offsets: Dict[str, Dict[str, int]] = {}  # Track field offsets within structs
         self.struct_instances: Dict[str, Dict[str, str]] = {}
+        self.expr_tmp_depth = 0
 
     def convert(self, source: str, source_path: Optional[Path] = None) -> str:
         self.source_path = source_path
@@ -1607,11 +1803,18 @@ class L7801L65Emitter:
         self.rom_data_blocks = []
         self.rom_array_labels = {}
         self.rom_array_lengths = {}
+        self.rom_array_dims = {}
         self.rom_array_values = {}
         self.ram_array_labels = {}
         self.ram_array_lengths = {}
+        self.ram_array_byte_lengths = {}
+        self.ram_array_element_sizes = {}
+        self.ram_array_struct_types = {}
         self.struct_defs = {}
+        self.struct_sizes = {}
+        self.struct_field_offsets = {}
         self.struct_instances = {}
+        self.expr_tmp_depth = 0
         self.function_params = {}
         self.defined_functions = set()
         self.extern_functions = set()
@@ -1713,6 +1916,10 @@ class L7801L65Emitter:
             if not isinstance(ext.type, c_ast.FuncDecl):
                 continue
             if ext.name in defined:
+                continue
+            # SCV API functions already have canonical param names in SCV_API_PARAMS;
+            # don't override them with possibly different spellings from the header.
+            if ext.name in self.SCV_API_PARAMS:
                 continue
             params = []
             if ext.type.args:
@@ -1967,7 +2174,7 @@ class L7801L65Emitter:
                     include_match = re.fullmatch(r'#include\s+"([^"]+)"', stripped)
                     if include_match:
                         include_raw = include_match.group(1)
-                        if include_raw.endswith(".c"):
+                        if include_raw.endswith(".c") or include_raw.endswith(".h"):
                             if current_path is None:
                                 raise ConversionError(
                                     f"#include requires a source path context: {stripped}"
@@ -1983,11 +2190,17 @@ class L7801L65Emitter:
                                 )
                             include_stack.add(include_path)
                             include_source = include_path.read_text(encoding="utf-8")
+                            # Headers may contain include guards; relax strict
+                            # mode so those directives are silently skipped
+                            prev_strict = self.strict
+                            if include_raw.endswith(".h"):
+                                self.strict = False
                             expanded = self._sanitize_source(
                                 include_source,
                                 current_path=include_path,
                                 include_stack=include_stack,
                             )
+                            self.strict = prev_strict
                             include_stack.remove(include_path)
                             if expanded:
                                 filtered.append(expanded)
@@ -2165,6 +2378,11 @@ class L7801L65Emitter:
         if decl.name is None:
             return
 
+        # extern variable declarations are forward declarations, not definitions
+        is_extern = "extern" in (decl.storage or [])
+        if is_extern:
+            return
+
         if decl.name in self.globals:
             raise ConversionError(f"Duplicate global declaration: {decl.name}")
 
@@ -2182,7 +2400,8 @@ class L7801L65Emitter:
         if isinstance(decl.type, c_ast.ArrayDecl):
             if is_const:
                 values = self._eval_const_array_u8(decl, decl.init)
-                self._register_rom_data_block(decl.name, values)
+                dims = self._extract_array_dims(decl.type)
+                self._register_rom_data_block(decl.name, values, dims)
                 return
 
             if decl.init is not None:
@@ -2199,7 +2418,26 @@ class L7801L65Emitter:
                 )
 
             length = self._eval_const_u8(decl.type.dim)
-            self._alloc_ram_array(decl.name, length)
+            struct_type = self._extract_struct_type_from_decl(decl)
+            if struct_type is not None:
+                struct_name = struct_type.name
+                if struct_name is None:
+                    coord = getattr(decl, "coord", "unknown")
+                    raise ConversionError(
+                        f"Anonymous struct array '{decl.name}' is not supported at {coord}"
+                    )
+                struct_size = self.struct_sizes.get(struct_name)
+                if struct_size is None:
+                    self._compute_struct_layout(struct_name, struct_type)
+                    struct_size = self.struct_sizes.get(struct_name)
+                if struct_size is None:
+                    coord = getattr(decl, "coord", "unknown")
+                    raise ConversionError(
+                        f"Could not determine struct size for '{struct_name}' at {coord}"
+                    )
+                self._alloc_ram_array(decl.name, length, struct_size, struct_name)
+            else:
+                self._alloc_ram_array(decl.name, length)
             return
 
         struct_type = self._extract_struct_type_from_decl(decl)
@@ -2393,7 +2631,10 @@ class L7801L65Emitter:
 
         values: List[int]
         if isinstance(init, c_ast.InitList):
-            values = self._flatten_const_array_init_u8(init)
+            if dims and all(isinstance(d, int) for d in dims):
+                values = self._flatten_const_array_init_for_dims_u8(init, dims)
+            else:
+                values = self._flatten_const_array_init_u8(init)
         elif isinstance(init, c_ast.Constant) and init.type == "string":
             raw = init.value
             if len(raw) < 2 or raw[0] != '"' or raw[-1] != '"':
@@ -2428,25 +2669,134 @@ class L7801L65Emitter:
                 values.append(self._eval_const_u8(expr))
         return values
 
-    def _register_rom_data_block(self, alias_name: str, values: List[int]) -> None:
+    def _flatten_const_array_init_for_dims_u8(self, init: c_ast.InitList, dims: List[int]) -> List[int]:
+        """Flatten const array initializer honoring dimensions and C string rules.
+
+        Supports forms like:
+          const unsigned char table[12][14] = { "...", "..." };
+        by expanding each row to exactly 14 bytes with zero padding when needed.
+        """
+        if not dims:
+            return self._flatten_const_array_init_u8(init)
+
+        def decode_string(expr: c_ast.Constant) -> List[int]:
+            raw = expr.value
+            coord = getattr(expr, "coord", "unknown")
+            if len(raw) < 2 or raw[0] != '"' or raw[-1] != '"':
+                raise ConversionError(f"Unsupported string literal {raw} at {coord}")
+            decoded = bytes(raw[1:-1], "utf-8").decode("unicode_escape")
+            return [ord(ch) & 0xFF for ch in decoded]
+
+        def dim_product(ds: List[int]) -> int:
+            total = 1
+            for d in ds:
+                total *= d
+            return total
+
+        def flatten_node(node: c_ast.Node, shape: List[int]) -> List[int]:
+            coord = getattr(node, "coord", "unknown")
+            if len(shape) == 1:
+                width = shape[0]
+                if not isinstance(width, int):
+                    raise ConversionError(
+                        f"Array row width must be an integer constant, got {width!r} at {coord}"
+                    )
+                if isinstance(node, c_ast.Constant) and node.type == "string":
+                    vals = decode_string(node)
+                    if len(vals) > width:
+                        raise ConversionError(
+                            f"String initializer has {len(vals)} bytes but row size is {width} at {coord}"
+                        )
+                    return vals + ([0] * (width - len(vals)))
+                if isinstance(node, c_ast.InitList):
+                    vals: List[int] = []
+                    for expr in node.exprs or []:
+                        if isinstance(expr, c_ast.Constant) and expr.type == "string":
+                            vals.extend(decode_string(expr))
+                        elif isinstance(expr, c_ast.InitList):
+                            vals.extend(self._flatten_const_array_init_u8(expr))
+                        else:
+                            vals.append(self._eval_const_u8(expr))
+                    if len(vals) > width:
+                        raise ConversionError(
+                            f"Array initializer row has {len(vals)} bytes but row size is {width} at {coord}"
+                        )
+                    return vals + ([0] * (width - len(vals)))
+                # Scalar for 1D row element
+                return [self._eval_const_u8(node)]
+
+            if not isinstance(node, c_ast.InitList):
+                raise ConversionError(f"Expected '{{...}}' initializer at {coord}")
+
+            outer = shape[0]
+            tail = shape[1:]
+            row_size = dim_product(tail)
+            rows: List[int] = []
+            exprs = node.exprs or []
+            if len(exprs) > outer:
+                raise ConversionError(
+                    f"Array initializer has {len(exprs)} rows but size is {outer} at {coord}"
+                )
+            for expr in exprs:
+                row_vals = flatten_node(expr, tail)
+                if len(row_vals) != row_size:
+                    if len(row_vals) > row_size:
+                        raise ConversionError(
+                            f"Array initializer row has {len(row_vals)} bytes but expected {row_size} at {coord}"
+                        )
+                    row_vals = row_vals + ([0] * (row_size - len(row_vals)))
+                rows.extend(row_vals)
+            missing = outer - len(exprs)
+            if missing > 0:
+                rows.extend([0] * (missing * row_size))
+            return rows
+
+        return flatten_node(init, dims)
+
+    def _register_rom_data_block(self, alias_name: str, values: List[int], dims: Optional[List[int]] = None) -> None:
         label = f"{alias_name}__rom"
         self.rom_data_blocks.append(
             RomDataBlock(alias_name=alias_name, label=label, data=values)
         )
         self.rom_array_labels[alias_name] = label
         self.rom_array_lengths[alias_name] = len(values)
+        if dims is not None:
+            self.rom_array_dims[alias_name] = dims
         self.rom_array_values[alias_name] = list(values)
 
-    def _alloc_ram_array(self, alias_name: str, length: int) -> None:
+    def _alloc_ram_array(
+        self,
+        alias_name: str,
+        length: int,
+        element_size: int = 1,
+        struct_type_name: Optional[str] = None,
+    ) -> None:
         if length <= 0:
             raise ConversionError(f"RAM array '{alias_name}' must have size > 0")
+        if element_size <= 0:
+            raise ConversionError(f"RAM array '{alias_name}' element size must have size > 0")
         if alias_name in self.ram_array_labels:
             return
+        total_bytes = length * element_size
         base_symbol = self._alloc_symbol(f"{alias_name}__ram_0")
-        for idx in range(1, length):
+        for idx in range(1, total_bytes):
             self._alloc_symbol(f"{alias_name}__ram_{idx}")
         self.ram_array_labels[alias_name] = base_symbol
         self.ram_array_lengths[alias_name] = length
+        self.ram_array_byte_lengths[alias_name] = total_bytes
+        self.ram_array_element_sizes[alias_name] = element_size
+        if struct_type_name is not None:
+            self.ram_array_struct_types[alias_name] = struct_type_name
+
+    def _extract_array_dims(self, array_decl: c_ast.ArrayDecl) -> List[int]:
+        """Extract array dimensions from nested ArrayDecl nodes."""
+        dims: List[int] = []
+        t = array_decl
+        while isinstance(t, c_ast.ArrayDecl):
+            if t.dim is not None:
+                dims.append(self._eval_const_u8(t.dim))
+            t = t.type
+        return dims
 
     def _register_enum(self, enum_node: c_ast.Enum) -> None:
         if enum_node.values is None:
@@ -2462,6 +2812,8 @@ class L7801L65Emitter:
         if struct_node.name is None or struct_node.decls is None:
             return
         self.struct_defs[struct_node.name] = self._flatten_struct_fields(struct_node)
+        # Also compute struct size and field offsets
+        self._compute_struct_layout(struct_node.name, struct_node)
 
     def _flatten_struct_fields(self, struct_node: c_ast.Struct, prefix: str = "") -> List[str]:
         if struct_node.decls is None:
@@ -2495,6 +2847,55 @@ class L7801L65Emitter:
                     f"Only scalar or nested-struct fields are supported ('{field.name}') at {coord}"
                 )
         return fields
+
+    def _compute_struct_layout(self, struct_name: str, struct_node: c_ast.Struct) -> None:
+        """Compute struct size and field offsets for array[index].field access."""
+        if struct_node.decls is None:
+            return
+        
+        offset = 0
+        field_offsets: Dict[str, int] = {}
+        
+        for field in struct_node.decls:
+            if field.name is None:
+                continue
+            size = self._sizeof_field(field)
+            field_offsets[field.name] = offset
+            offset += size
+        
+        self.struct_sizes[struct_name] = offset
+        self.struct_field_offsets[struct_name] = field_offsets
+    
+    def _sizeof_field(self, field: c_ast.Decl) -> int:
+        """Compute the size in bytes of a struct field."""
+        # Simple type sizes - assumes 8-bit CPU with 16-bit ints
+        type_node = field.type
+        
+        # Unwrap TypeDecl
+        while isinstance(type_node, c_ast.TypeDecl):
+            type_node = type_node.type
+        
+        # Handle IdentifierType (basic types like char, int, unsigned char, etc.)
+        if isinstance(type_node, c_ast.IdentifierType):
+            typename = " ".join(type_node.names)
+            if "char" in typename:
+                return 1
+            elif "int" in typename:
+                return 2  # 16-bit int for 8-bit CPU
+            else:
+                return 1  # Default to 1 byte
+        
+        # Handle Struct fields
+        if isinstance(type_node, c_ast.Struct):
+            if type_node.name and type_node.name in self.struct_sizes:
+                return self.struct_sizes[type_node.name]
+            # If we haven't computed it yet, compute it now
+            if type_node.name and type_node.decls is not None:
+                self._compute_struct_layout(type_node.name, type_node)
+                return self.struct_sizes.get(type_node.name, 1)
+            return 1  # Unknown size defaults to 1
+        
+        return 1  # Default size
 
     def _ensure_known_types_from_decl(self, decl: c_ast.Decl) -> None:
         t: Optional[c_ast.Node] = decl.type
@@ -2540,7 +2941,7 @@ class L7801L65Emitter:
             base, path = self._split_struct_ref(struct_ref.name)
             return base, f"{path}__{field_name}"
 
-        self._unsupported(struct_ref, "Only direct/chained struct.field access is supported")
+        self._unsupported(struct_ref, "Array-indexed struct field access (e.g., actors[i].field) not yet supported - use temporary variables instead")
         return "", ""
 
     def _resolve_struct_field_symbol(self, struct_ref: c_ast.StructRef) -> str:
@@ -2617,6 +3018,11 @@ class L7801L65Emitter:
                 self._emit_stmt(item)
             return
 
+        if isinstance(node, c_ast.DeclList):
+            for decl in node.decls:
+                self._emit_stmt(decl)
+            return
+
         if isinstance(node, c_ast.Decl):
             self._emit_decl(node)
             return
@@ -2644,6 +3050,22 @@ class L7801L65Emitter:
 
         if isinstance(node, c_ast.While):
             self._emit_while(node)
+            return
+
+        if isinstance(node, c_ast.For):
+            self._emit_for(node)
+            return
+
+        if isinstance(node, c_ast.Break):
+            if not self.loop_end_labels:
+                self._unsupported(node, "break outside loop")
+                return
+            self._emit(f"    jmp {self.loop_end_labels[-1]}")
+            return
+
+        if isinstance(node, c_ast.UnaryOp):
+            # Unary ops as statements (e.g., `!x;` or `-y;`) - just evaluate and discard
+            self._emit_expr_to_a(node)
             return
 
         self._unsupported(node, f"Statement type {type(node).__name__}")
@@ -2690,7 +3112,26 @@ class L7801L65Emitter:
                 )
 
             length = self._eval_const_u8(decl.type.dim)
-            self._alloc_ram_array(scoped_alias, length)
+            struct_type = self._extract_struct_type_from_decl(decl)
+            if struct_type is not None:
+                struct_name = struct_type.name
+                if struct_name is None:
+                    coord = getattr(decl, "coord", "unknown")
+                    raise ConversionError(
+                        f"Anonymous struct array '{decl.name}' is not supported at {coord}"
+                    )
+                struct_size = self.struct_sizes.get(struct_name)
+                if struct_size is None:
+                    self._compute_struct_layout(struct_name, struct_type)
+                    struct_size = self.struct_sizes.get(struct_name)
+                if struct_size is None:
+                    coord = getattr(decl, "coord", "unknown")
+                    raise ConversionError(
+                        f"Could not determine struct size for '{struct_name}' at {coord}"
+                    )
+                self._alloc_ram_array(scoped_alias, length, struct_size, struct_name)
+            else:
+                self._alloc_ram_array(scoped_alias, length)
             return
 
         struct_type = self._extract_struct_type_from_decl(decl)
@@ -2742,7 +3183,32 @@ class L7801L65Emitter:
                 )
             target = self._resolve_symbol(assign.lvalue.name)
         elif isinstance(assign.lvalue, c_ast.StructRef):
-            target = self._resolve_struct_field_symbol(assign.lvalue)
+            # Handle both direct and array-indexed struct field assignment
+            if isinstance(assign.lvalue.name, c_ast.ArrayRef):
+                # Array-indexed: actors[i].field = value
+                # Emit the assignment with dynamic address computation
+                self._emit_expr_to_a(assign.rvalue)
+                self._emit("    mov c,a")  # c = value to store
+                # Now compute address and store
+                self._emit_struct_field_store(assign.lvalue, "c")
+                return
+            else:
+                # Direct struct field: actor.field = value
+                target = self._resolve_struct_field_symbol(assign.lvalue)
+        elif isinstance(assign.lvalue, c_ast.ArrayRef):
+            if not isinstance(assign.lvalue.name, c_ast.ID):
+                self._unsupported(assign, "Only direct RAM array assignment is supported")
+                return
+            ram_alias = self._resolve_ram_array_alias(assign.lvalue.name.name)
+            if ram_alias is None:
+                coord = getattr(assign, "coord", "unknown")
+                raise ConversionError(
+                    f"Array '{assign.lvalue.name.name}' is not a mutable RAM array at {coord}"
+                )
+            self._emit_expr_to_a(assign.rvalue)
+            self._emit("    mov c,a")
+            self._emit_ram_array_store(ram_alias, assign.lvalue.subscript, "c")
+            return
         else:
             self._unsupported(assign, "Only direct variable or struct.field assignment is supported")
             return
@@ -2783,7 +3249,40 @@ class L7801L65Emitter:
         self._emit(f"    jr {body_label}")
         self._emit(f"    jmp {end_label}")
         self._emit(f"@{body_label}")
-        self._emit_stmt(node.stmt)
+        self.loop_end_labels.append(end_label)
+        try:
+            self._emit_stmt(node.stmt)
+        finally:
+            self.loop_end_labels.pop()
+        self._emit(f"    jmp {start_label}")
+        self._emit(f"@{end_label}")
+
+    def _emit_for(self, node: c_ast.For) -> None:
+        start_label = self._new_label("for_start")
+        end_label = self._new_label("for_end")
+        body_label = self._new_label("for_body")
+
+        # Execute init statement if present
+        if node.init is not None:
+            self._emit_stmt(node.init)
+
+        self._emit(f"@{start_label}")
+        # Evaluate condition if present; if not present, loop is infinite (must use break)
+        if node.cond is not None:
+            self._emit_expr_to_a(node.cond)
+            # Skip-safe branch: if cond != 0, enter body; else break.
+            self._emit("    eqi a,0")
+            self._emit(f"    jr {body_label}")
+            self._emit(f"    jmp {end_label}")
+        self._emit(f"@{body_label}")
+        self.loop_end_labels.append(end_label)
+        try:
+            self._emit_stmt(node.stmt)
+        finally:
+            self.loop_end_labels.pop()
+        # Execute next statement if present
+        if node.next is not None:
+            self._emit_stmt(node.next)
         self._emit(f"    jmp {start_label}")
         self._emit(f"@{end_label}")
 
@@ -2905,6 +3404,48 @@ class L7801L65Emitter:
             self.extern_functions.add(callee)
             self._alloc_symbol("scv_print_string__tmp_guard")
 
+            self._emit(f"    call fn_{callee}")
+            return
+
+        if callee == "scv_load_bg_array":
+            if len(args) != 3:
+                raise ConversionError(
+                    f"Call arity mismatch for {callee}: expected 3, got {len(args)}"
+                )
+
+            slot_pattern = self._alloc_symbol(self._arg_symbol_name(callee, "pattern_slot"))
+            slot_count = self._alloc_symbol(self._arg_symbol_name(callee, "pattern_count"))
+
+            self._emit_expr_to_a(args[0])
+            self._emit(f"    mov ({slot_pattern}),a")
+
+            if not isinstance(args[1], c_ast.ID):
+                coord = getattr(args[1], "coord", "unknown")
+                raise ConversionError(
+                    f"scv_load_bg_array source must be a ROM or RAM array identifier at {coord}"
+                )
+
+            src_alias = args[1].name
+            rom_alias = self._resolve_rom_array_alias(src_alias)
+            ram_alias = self._resolve_ram_array_alias(src_alias)
+            if rom_alias is None and ram_alias is None:
+                coord = getattr(args[1], "coord", "unknown")
+                raise ConversionError(
+                    f"scv_load_bg_array source '{src_alias}' must be a ROM or RAM array identifier at {coord}"
+                )
+
+            self._emit_expr_to_a(args[2])
+            self._emit(f"    mov ({slot_count}),a")
+
+            if rom_alias is not None:
+                self._emit(f"    lxi de,{self.rom_array_labels[rom_alias]}")
+            else:
+                self._emit(f"    lxi de,{self.ram_array_labels[ram_alias]}")
+
+            if params is None:
+                params = self.SCV_API_PARAMS[callee]
+                self.function_params[callee] = params
+            self.extern_functions.add(callee)
             self._emit(f"    call fn_{callee}")
             return
 
@@ -3041,11 +3582,7 @@ class L7801L65Emitter:
             return
 
         if isinstance(expr, c_ast.StructRef):
-            sym = self._resolve_struct_field_symbol(expr)
-            if sym in self.rom_constants:
-                self._emit(f"    mvi a,{self._fmt_imm(self.rom_constants[sym])}")
-            else:
-                self._emit(f"    mov a,({sym})")
+            self._emit_struct_field_to_a(expr)
             return
 
         if isinstance(expr, c_ast.ArrayRef):
@@ -3067,19 +3604,124 @@ class L7801L65Emitter:
         self._unsupported(expr, f"Expression type {type(expr).__name__}")
 
     def _emit_array_ref_to_a(self, expr: c_ast.ArrayRef) -> None:
+        # Handle multi-dimensional arrays: arr[i][j] where arr[i] is an ArrayRef
+        if isinstance(expr.name, c_ast.ArrayRef):
+            # Multi-dimensional array access: evaluate outer array first
+            outer_expr = expr.name  # This is arr[i]
+            inner_subscript = expr.subscript  # This is j in arr[i][j]
+            
+            # Get the array name and validate
+            if not isinstance(outer_expr.name, c_ast.ID):
+                self._unsupported(expr, "Nested array indexing only supports direct array variables")
+                return
+            
+            base_name = outer_expr.name.name
+            alias = self._resolve_rom_array_alias(base_name)
+            if alias is None:
+                coord = getattr(expr, "coord", "unknown")
+                raise ConversionError(
+                    f"Array '{base_name}' is not a const/static const ROM array at {coord}"
+                )
+            
+            label = self.rom_array_labels[alias]
+            dims = self.rom_array_dims.get(alias, [])
+            
+            if not dims or len(dims) < 2:
+                self._unsupported(expr, "Multi-dimensional array must have defined dimensions")
+                return
+            
+            row_width = dims[1]  # For arr[rows][cols], cols is the row width/stride
+            
+            # For 2D arrays stored row-major: offset = outer_idx * row_width + inner_idx
+            # Evaluate outer index
+            self._emit_expr_to_a(outer_expr.subscript)
+            self._emit("    mov b,a")  # b = outer index
+            
+            # Multiply outer index by row width
+            # For common row widths, use efficient shifts or add sequences
+            if row_width == 1:
+                self._emit("    mov a,b")
+            elif row_width == 2:
+                self._emit("    mov a,b")
+                self._emit("    add a,a")  # a *= 2 (left shift)
+            elif row_width == 4:
+                self._emit("    mov a,b")
+                self._emit("    add a,a")  # a *= 2
+                self._emit("    add a,a")  # a *= 4
+            elif row_width == 8:
+                self._emit("    mov a,b")
+                self._emit("    add a,a")  # a *= 8 (three shifts)
+                self._emit("    add a,a")
+                self._emit("    add a,a")
+            else:
+                # General case: load row_width and multiply using d as accumulator
+                self._emit("    mov c,a")  # c = index (multiplier)
+                self._emit(f"    mvi b,{self._fmt_imm(row_width)}")  # b = row_width (counter)
+                self._emit("    mvi d,0")  # d = accumulator
+                mul_loop = self._new_label("mul_loop")
+                self._emit(f"@{mul_loop}")
+                self._emit("    mov a,d")  # a = accumulator
+                self._emit("    add a,c")  # a += index
+                self._emit("    mov d,a")  # d = new accumulator
+                self._emit("    dcr b")  # b--
+                self._emit(f"    jre {mul_loop}")  # jump if b != 0
+            
+            self._emit("    mov a,d")  # a = result from d
+            self._emit("    mov b,a")  # b = outer_idx * row_width
+            
+            # Add inner index
+            const_inner_idx: Optional[int] = None
+            try:
+                const_inner_idx = self._eval_const_u8(inner_subscript)
+            except ConversionError:
+                const_inner_idx = None
+            
+            if const_inner_idx is not None:
+                # Inner index is constant
+                self._emit(f"    lxi hl,{label}")
+                self._emit("    mov a,b")
+                if const_inner_idx != 0:
+                    self._emit(f"    mvi c,{self._fmt_imm(const_inner_idx)}")
+                    self._emit("    add a,c")
+                self._emit("    add l,a")
+                self._emit("    aci h,0")
+                self._emit("    ldax (hl)")
+                return
+            else:
+                # Both indices are runtime - compute total offset
+                self._emit_expr_to_a(inner_subscript)
+                self._emit("    mov c,a")  # c = inner index
+                self._emit("    mov a,b")  # a = outer_idx * row_width
+                self._emit("    add a,c")  # a = total offset
+                self._emit(f"    lxi hl,{label}")
+                self._emit("    add l,a")
+                self._emit("    aci h,0")
+                self._emit("    ldax (hl)")
+                return
+        
+        # Single-dimensional array access
         if not isinstance(expr.name, c_ast.ID):
             self._unsupported(expr, "Only direct array variable indexing is supported")
             return
 
         alias = self._resolve_rom_array_alias(expr.name.name)
+        ram_alias = None
         if alias is None:
+            ram_alias = self._resolve_ram_array_alias(expr.name.name)
+        if alias is None and ram_alias is None:
             coord = getattr(expr, "coord", "unknown")
             raise ConversionError(
-                f"Array '{expr.name.name}' is not a const/static const ROM array at {coord}"
+                f"Array '{expr.name.name}' is not a supported ROM or RAM array at {coord}"
             )
 
-        label = self.rom_array_labels[alias]
-        arr_len = self.rom_array_lengths[alias]
+        if alias is not None:
+            label = self.rom_array_labels[alias]
+            arr_len = self.rom_array_lengths[alias]
+            is_rom = True
+        else:
+            label = self.ram_array_labels[ram_alias]
+            arr_len = self.ram_array_lengths[ram_alias]
+            is_rom = False
 
         const_idx: Optional[int] = None
         try:
@@ -3109,6 +3751,214 @@ class L7801L65Emitter:
         self._emit("    add l,a")
         self._emit("    aci h,0")
         self._emit("    ldax (hl)")
+
+    def _emit_struct_field_to_a(self, struct_ref: c_ast.StructRef) -> None:
+        """Emit code to load a struct field into register A.
+        
+        Supports both direct struct instances (e.g., actor.field) and
+        array-indexed struct fields (e.g., actors[i].field) without using temp variables.
+        """
+        if struct_ref.type != '.':
+            self._unsupported(struct_ref, "Only '.' struct access is supported")
+            return
+        if not isinstance(struct_ref.field, c_ast.ID):
+            self._unsupported(struct_ref, "Only named struct fields are supported")
+            return
+        
+        field_name = struct_ref.field.name
+        
+        # Check if this is array-indexed struct field access (e.g., actors[i].field)
+        if isinstance(struct_ref.name, c_ast.ArrayRef):
+            array_ref = struct_ref.name
+            if not isinstance(array_ref.name, c_ast.ID):
+                self._unsupported(struct_ref, "Only direct array variables in struct field access")
+                return
+            
+            array_name = array_ref.name.name
+            array_alias = self._resolve_ram_array_alias(array_name)
+            if array_alias is None:
+                coord = getattr(struct_ref, "coord", "unknown")
+                raise ConversionError(f"Array '{array_name}' not found at {coord}")
+            
+            array_base = self.ram_array_labels[array_alias]
+            # Extract the element type to get struct name and size
+            struct_type_name = self.ram_array_struct_types.get(array_alias, array_name)
+            struct_size = self._get_array_struct_size(array_alias, array_name)
+            field_offset = self._get_struct_field_offset(struct_type_name, field_name)
+            
+            # Compute address: base + (index * struct_size) + field_offset
+            self._emit_expr_to_a(array_ref.subscript)  # a = index
+            
+            if struct_size == 1:
+                self._emit("    mov b,a")  # b = index
+            elif struct_size == 2:
+                self._emit("    add a,a")  # a *= 2
+                self._emit("    mov b,a")  # b = index * 2
+            elif struct_size == 4:
+                self._emit("    add a,a")  # a *= 2
+                self._emit("    add a,a")  # a *= 4
+                self._emit("    mov b,a")  # b = index * 4
+            else:
+                # General multiply: a = index, compute a * struct_size using d as accumulator
+                self._emit("    mov c,a")  # c = index (multiplier)
+                self._emit(f"    mvi b,{self._fmt_imm(struct_size)}")  # b = struct_size (counter)
+                self._emit("    mvi d,0")  # d = accumulator
+                mul_loop = self._new_label("struct_mul_loop")
+                self._emit(f"@{mul_loop}")
+                self._emit("    mov a,d")  # a = accumulator
+                self._emit("    add a,c")  # a += index
+                self._emit("    mov d,a")  # d = new accumulator
+                self._emit("    dcr b")  # b--
+                self._emit(f"    jre {mul_loop}")  # jump if b != 0
+                self._emit("    mov a,d")  # a = result from d
+                self._emit("    mov b,a")  # b = index * struct_size
+            
+            # Load base address into HL
+            self._emit(f"    lxi hl,{array_base}")
+            # Add computed offset
+            self._emit("    mov a,b")  # a = index_offset
+            if field_offset != 0:
+                self._emit(f"    mvi c,{self._fmt_imm(field_offset)}")
+                self._emit("    add a,c")  # a += field_offset
+            self._emit("    add l,a")
+            self._emit("    aci h,0")
+            self._emit("    ldax (hl)")
+            return
+        
+        # Direct struct field access (non-indexed)
+        sym = self._resolve_struct_field_symbol(struct_ref)
+        if sym in self.rom_constants:
+            self._emit(f"    mvi a,{self._fmt_imm(self.rom_constants[sym])}")
+        else:
+            self._emit(f"    mov a,({sym})")
+
+    def _get_array_struct_size(self, array_alias: str, array_name: str) -> int:
+        """Get the struct size for an array-of-structs."""
+        struct_name = self.ram_array_struct_types.get(array_alias)
+        if struct_name is not None and struct_name in self.struct_sizes:
+            return self.struct_sizes[struct_name]
+        element_size = self.ram_array_element_sizes.get(array_alias)
+        if element_size is not None:
+            return element_size
+        coord = getattr(self.current_fn, "name", "global") if self.current_fn is not None else "global"
+        raise ConversionError(f"Could not determine struct size for RAM array '{array_name}' in {coord}")
+
+    def _get_struct_field_offset(self, struct_name: str, field_name: str) -> int:
+        """Get the offset of a field within a struct."""
+        if struct_name in self.struct_field_offsets and field_name in self.struct_field_offsets[struct_name]:
+            return self.struct_field_offsets[struct_name][field_name]
+        raise ConversionError(f"Unknown field '{field_name}' on struct '{struct_name}'")
+
+    def _emit_ram_array_store(self, array_alias: str, subscript: c_ast.Node, value_register: str = "a") -> None:
+        array_base = self.ram_array_labels[array_alias]
+
+        if value_register != "a":
+            self._emit(f"    mov a,{value_register}")
+        self._emit("    mov c,a")
+
+        const_idx: Optional[int] = None
+        try:
+            const_idx = self._eval_const_u8(subscript)
+        except ConversionError:
+            const_idx = None
+
+        if const_idx is not None:
+            self._emit(f"    lxi hl,{array_base}")
+            if const_idx != 0:
+                self._emit(f"    mvi a,{self._fmt_imm(const_idx)}")
+                self._emit("    add l,a")
+                self._emit("    aci h,0")
+            self._emit("    mov a,c")
+            self._emit("    stax (hl)")
+            return
+
+        self._emit_expr_to_a(subscript)
+        self._emit("    mov b,a")
+        self._emit(f"    lxi hl,{array_base}")
+        self._emit("    mov a,b")
+        self._emit("    add l,a")
+        self._emit("    aci h,0")
+        self._emit("    mov a,c")
+        self._emit("    stax (hl)")
+
+    def _emit_struct_field_store(self, struct_ref: c_ast.StructRef, value_register: str = "a") -> None:
+        """Emit code to store a value from a register into an array-indexed struct field.
+        
+        Args:
+            struct_ref: The StructRef node (e.g., actors[i].field)
+            value_register: The register containing the value ("a" or "c")
+        """
+        if not isinstance(struct_ref.name, c_ast.ArrayRef):
+            self._unsupported(struct_ref, "Store only for array-indexed struct fields")
+            return
+        
+        if not isinstance(struct_ref.field, c_ast.ID):
+            self._unsupported(struct_ref, "Only named struct fields are supported")
+            return
+        
+        array_ref = struct_ref.name
+        field_name = struct_ref.field.name
+        
+        if not isinstance(array_ref.name, c_ast.ID):
+            self._unsupported(struct_ref, "Only direct array variables in struct field access")
+            return
+        
+        array_name = array_ref.name.name
+        array_alias = self._resolve_ram_array_alias(array_name)
+        if array_alias is None:
+            coord = getattr(struct_ref, "coord", "unknown")
+            raise ConversionError(f"Array '{array_name}' not found at {coord}")
+        
+        array_base = self.ram_array_labels[array_alias]
+        struct_type_name = self.ram_array_struct_types.get(array_alias, array_name)
+        struct_size = self._get_array_struct_size(array_alias, array_name)
+        field_offset = self._get_struct_field_offset(struct_type_name, field_name)
+        
+        # Save value register if needed
+        if value_register != "a":
+            self._emit(f"    mov a,{value_register}")
+        
+        # Compute offset from index
+        self._emit_expr_to_a(array_ref.subscript)  # a = index
+        
+        if struct_size == 1:
+            self._emit("    mov b,a")
+        elif struct_size == 2:
+            self._emit("    add a,a")  # a *= 2
+            self._emit("    mov b,a")
+        elif struct_size == 4:
+            self._emit("    add a,a")  # a *= 2
+            self._emit("    add a,a")  # a *= 4
+            self._emit("    mov b,a")
+        else:
+            # General multiply using d as accumulator
+            self._emit("    mov c,a")  # c = index (multiplier)
+            self._emit(f"    mvi b,{self._fmt_imm(struct_size)}")  # b = struct_size (counter)
+            self._emit("    mvi d,0")  # d = accumulator
+            mul_loop = self._new_label("struct_mul_loop")
+            self._emit(f"@{mul_loop}")
+            self._emit("    mov a,d")  # a = accumulator
+            self._emit("    add a,c")  # a += index
+            self._emit("    mov d,a")  # d = new accumulator
+            self._emit("    dcr b")  # b--
+            self._emit(f"    jre {mul_loop}")  # jump if b != 0
+            self._emit("    mov a,d")  # a = result from d
+            self._emit("    mov b,a")  # b = result
+        
+        # Prepare value for store
+        self._emit(f"    mvi a,{self._fmt_imm(field_offset)}")
+        self._emit("    add a,b")  # a = field_offset + index_offset
+        self._emit(f"    lxi hl,{array_base}")
+        self._emit("    add l,a")
+        self._emit("    aci h,0")
+        
+        # Restore value and store
+        if value_register == "a":
+            # Need to save a first since we used it for address computation
+            self._unsupported(struct_ref, "Value must be in register c for store operations")
+        else:
+            self._emit(f"    mov a,{value_register}")
+            self._emit("    stax (hl)")
 
     def _emit_unary(self, unary: c_ast.UnaryOp) -> None:
         if unary.op == "+":
@@ -3140,6 +3990,33 @@ class L7801L65Emitter:
 
         if unary.op == "*":
             self._emit_deref_to_a(unary.expr)
+            return
+
+        if unary.op == "p++":  # postfix ++: variable++
+            # For simplicity, treat as prefix ++ (return incremented value, not original)
+            if not isinstance(unary.expr, c_ast.ID):
+                self._unsupported(unary, "Postfix ++ only supports simple variables")
+                return
+            var = self._resolve_symbol(unary.expr.name)
+            self._emit(f"    mov a,({var})")
+            self._emit("    mov b,a")
+            self._emit("    inc a")
+            self._emit(f"    mov ({var}),a")
+            # Return incremented value
+            return
+
+        if unary.op == "p--":  # postfix --: variable--
+            # For simplicity, treat as prefix --
+            if not isinstance(unary.expr, c_ast.ID):
+                self._unsupported(unary, "Postfix -- only supports simple variables")
+                return
+            var = self._resolve_symbol(unary.expr.name)
+            self._emit(f"    mov a,({var})")
+            self._emit("    mov b,a")
+            self._emit("    mov a,0xFF")
+            self._emit("    add a,b")  # a = 0xFF + b = b - 1
+            self._emit(f"    mov ({var}),a")
+            # Return decremented value
             return
 
         self._unsupported(unary, f"Unary operator {unary.op}")
@@ -3246,9 +4123,18 @@ class L7801L65Emitter:
                 self._emit_shift_right(binary.left, binary.right)
                 return
 
+            depth = self.expr_tmp_depth
+            self.expr_tmp_depth += 1
+            lhs_slot = self._alloc_symbol(f"arith__tmp_expr_{depth * 2}")
+            rhs_slot = self._alloc_symbol(f"arith__tmp_expr_{depth * 2 + 1}")
+
             self._emit_expr_to_a(binary.left)
-            self._emit("    mov b,a")
+            self._emit(f"    mov ({lhs_slot}),a")
             self._emit_expr_to_a(binary.right)
+            self._emit(f"    mov ({rhs_slot}),a")
+            self._emit(f"    mov a,({lhs_slot})")
+            self._emit("    mov b,a")
+            self._emit(f"    mov a,({rhs_slot})")
 
             if op == "+":
                 self._emit("    add a,b")
@@ -3262,6 +4148,7 @@ class L7801L65Emitter:
                 self._emit("    ora a,b")
             elif op == "^":
                 self._emit("    xra a,b")
+            self.expr_tmp_depth -= 1
             return
 
         if op in {"&&", "||"}:
@@ -3278,13 +4165,22 @@ class L7801L65Emitter:
         true_label = self._new_label("cmp_true")
         false_label = self._new_label("cmp_false")
         end_label = self._new_label("cmp_end")
+        depth = self.expr_tmp_depth
+        self.expr_tmp_depth += 1
+        lhs_slot = self._alloc_symbol(f"arith__tmp_expr_{depth * 2}")
+        rhs_slot = self._alloc_symbol(f"arith__tmp_expr_{depth * 2 + 1}")
 
         self._emit_expr_to_a(binary.left)
-        self._emit("    mov b,a")
+        self._emit(f"    mov ({lhs_slot}),a")
         self._emit_expr_to_a(binary.right)
+        self._emit(f"    mov ({rhs_slot}),a")
+        self._emit(f"    mov a,({lhs_slot})")
+        self._emit("    mov b,a")
+        self._emit(f"    mov a,({rhs_slot})")
         self._emit("    mov c,a")
         self._emit("    mov a,b")
         self._emit("    sub a,c")
+        self.expr_tmp_depth -= 1
 
         op = binary.op
         if op == "==":
@@ -3312,7 +4208,11 @@ class L7801L65Emitter:
             self._emit(f"    jr {true_label}")
             self._emit(f"    jmp {false_label}")
         elif op == ">=":
-            self._emit("    lti a,0")
+            # lti-based lowering has been unreliable in bounds-check loops.
+            # Re-express left >= right as not ((right - left) > 0) and use gti.
+            self._emit("    mov a,c")
+            self._emit("    sub a,b")
+            self._emit("    gti a,0")
             self._emit(f"    jr {true_label}")
             self._emit(f"    jmp {false_label}")
 
@@ -3481,6 +4381,16 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         help="Optional assembler command used to validate generated output, e.g. '/path/to/l7801'",
     )
     parser.add_argument(
+        "--validate-backend",
+        choices=["l7801", "asm7801"],
+        default="l7801",
+        help="Validation backend: external l7801 dump check or in-repo asm7801 assembler (default: l7801)",
+    )
+    parser.add_argument(
+        "--validate-compare-bin",
+        help="Optional .bin path for byte-compare when using --validate-backend asm7801",
+    )
+    parser.add_argument(
         "--warn-headroom",
         default="16",
         help="Warn when RAM/stack headroom is below this byte count (default: 16)",
@@ -3530,6 +4440,39 @@ def run_validation(validate_cmd: str, output_file: Path) -> Tuple[int, str]:
         dump_path.unlink(missing_ok=True)
 
 
+def run_validation_asm7801(output_file: Path, compare_bin: Optional[Path]) -> Tuple[int, str]:
+    import tempfile
+
+    asm7801_path = Path(__file__).with_name("asm7801.py")
+    if not asm7801_path.exists():
+        return 2, f"validation error: asm7801 backend not found at {asm7801_path}"
+
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tf:
+        assembled_bin = Path(tf.name)
+
+    try:
+        cmd = [
+            sys.executable,
+            str(asm7801_path),
+            str(output_file),
+            "--assemble-bin",
+            str(assembled_bin),
+        ]
+        if compare_bin is not None:
+            cmd.extend(["--compare-bin", str(compare_bin)])
+
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        merged = (proc.stdout or "") + (proc.stderr or "")
+        return proc.returncode, merged
+    finally:
+        assembled_bin.unlink(missing_ok=True)
+
+
 def main(argv: List[str]) -> int:
     args = parse_args(argv)
 
@@ -3575,6 +4518,18 @@ def main(argv: List[str]) -> int:
             f"{stats['stack_headroom']} bytes (threshold {warn_headroom})",
             file=sys.stderr,
         )
+
+    compare_bin_path = Path(args.validate_compare_bin) if args.validate_compare_bin else None
+    if args.validate_backend == "asm7801":
+        if compare_bin_path is None:
+            default_compare = output_path.with_suffix(".bin")
+            if default_compare.exists():
+                compare_bin_path = default_compare
+        code, text = run_validation_asm7801(output_path, compare_bin_path)
+        print(f"validation exit code: {code}")
+        if text.strip():
+            print(text.rstrip())
+        return code
 
     if args.validate_cmd:
         code, text = run_validation(args.validate_cmd, output_path)
