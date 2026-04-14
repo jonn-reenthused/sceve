@@ -1,16 +1,15 @@
 #include "../tools/scv_api.h"
 
 /*
- * Canonical CrabSCV parity demo.
- *
- * This file reproduces CrabSCV background output by using:
- * - byte-exact pattern data converted from CrabSCV Background.spr
- * - byte-exact sparse sprite table converted from CrabSCV Background.scn
- * - matching VDC startup values from CrabSCV Startup.s
- *
+ * CrabSCV parity demo.
+ * A reproduction of the original CrabSCV demo by cdoty (https://github.com/cdoty/CrabSCV)
+ * Uses the same graphics with these acknowledgements:
+ * Crab: https://vurmux.itch.io/urizen-onebit-tilesets
+ * Background: https://s4m-ur4i.itch.io/minimal-futureset-pixelart-2d
+ * 
  * Controls (P1):
  * - Left:  D-pad left
- * - Right: D-pad right
+ * - Right: D-pad rightNo, 
  * - B1:    Claw pose A
  * - B2:    Claw pose B
  */
@@ -62,8 +61,7 @@ int main(void) {
         scv_read_pad1();
         scv_read_pad2();
 
-        /* P1 Left: pad2 bit0 (active-low) */
-        if ((scv_pad2_state & 0x01) == 0) {
+        if (scv_is_p1_left_pressed(scv_pad2_state)) {
             if (player_x > 28) {
                 player_x = player_x - 1;
             }
@@ -71,8 +69,7 @@ int main(void) {
             move_dir = -1;
         }
 
-        /* P1 Right: pad1 bit1 (active-low) */
-        if ((scv_pad1_state & 0x02) == 0) {
+        if (scv_is_p1_right_pressed(scv_pad1_state)) {
             if (player_x < 209) {
                 player_x = player_x + 1;
             }
@@ -102,10 +99,10 @@ int main(void) {
          * Use P1 buttons to pick one of 3 claw poses.
          */
         claw_frame = 6;
-        if ((scv_pad2_state & 0x04) == 0) {
+        if (scv_is_p1_fire1_pressed(scv_pad2_state)) {
             claw_frame = 7;
         }
-        if ((scv_pad1_state & 0x04) == 0) {
+        if (scv_is_p1_fire2_pressed(scv_pad1_state)) {
             claw_frame = 6;
         }
 
