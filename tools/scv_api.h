@@ -21,7 +21,9 @@
  *
  * RAM layout (uPD7801 internal RAM, 0xFF80-0xFFFF, 128 bytes total):
  *   0xFF80-0xFF9F  software sprite shadow table (8 sprites x 4 bytes)
- *   0xFFA0-0xFFEF  user variables  (default --ram-base 0xFFA0)
+ *   0xFFA0-0xFFEF  user variables when software sprites are enabled
+ *                  (default --ram-base auto reserves this only when
+ *                   scv_set_sprite/scv_move_sprite/scv_hide_sprite are used)
  *   0xFFF0         stack pointer init; stack grows downward from here
  *
  * Software sprite shadow table layout (0xFF80-0xFF9F):
@@ -104,27 +106,49 @@ extern int sprintf(char *dst, char *fmt, int value);
 
 /* ----------------------------------------------------------------
  * Graphics tiles / background mapping
- * Background tiles are mapped to pattern range 0-63.
+ * Background tile IDs are stored in the tilemap at 0x3040+.
  * Effective background pattern = (tile_id & 0x3F).
  *
- * scv_draw_tile/scv_draw_bg_tile mask tile_id to 0..63.
+ * IMPORTANT: current SCV hardware/MAME evidence indicates that
+ * scv_draw_tile/scv_draw_bg_tile/scv_draw_bg_tile_scrolled select glyphs from
+ * the fixed character ROM in text mode. They do NOT currently display custom
+ * patterns uploaded into VRAM at 0x2000, which is why experiments still show
+ * BIOS/ASCII characters even after direct VRAM writes.
+ *
+ * These APIs therefore behave as tilemap writers for the built-in glyph set.
  * scv_set_bg_scroll sets background scroll offsets (x wraps 0..31,
  * y wraps 0..11).
- * scv_draw_bg_tile_scrolled draws using those offsets.
  *
  * scv_load_bg_array(pattern_slot, src_array, pattern_count):
- *   Bulk-copy contiguous pattern bytes into the background-sprite
- *   pattern bank used by scv_set_hw_sprite_raw (VRAM base 0x2000).
+ *   Bulk-copy contiguous 8x16 bytes into VRAM at base 0x2000.
+ *   This is kept as a low-level/debug upload helper, but those bytes are not
+ *   currently used by scv_draw_bg_tile/scv_draw_tile in the text/background
+ *   path according to the MAME SCV video model.
  *   - pattern_slot: destination slot 0..63
  *   - src_array: ROM or RAM byte array identifier
- *   - pattern_count: number of 32-byte patterns to copy
- *   Total copied bytes = pattern_count * 32.
+ *   - pattern_count: number of 16-byte records to copy
+ *   Total copied bytes = pattern_count * 16.
+ *
+ * scv_load_bg_pattern_array(pattern_slot, src_array, pattern_count):
+ *   Bulk-copy 32-byte 16x16 background patterns into sprite pattern VRAM at
+ *   0x2000, targeting slots 0..63 for use with scv_set_hw_sprite_raw(...).
+ *
+ * scv_load_bg_sprite_array(pattern_slot, src_array, pattern_count):
+ *   Backward-compatible alias for scv_load_bg_pattern_array(...).
+ *
+ * scv_vram_copy(addr_hi, addr_lo, src_array, byte_count):
+ *   Debug/probe helper that copies byte_count bytes from a ROM or RAM array
+ *   to an arbitrary VRAM destination address. Useful for verifying which
+ *   pattern bank a display path actually reads from.
  * ---------------------------------------------------------------- */
 extern void scv_draw_tile(int row, int col, int tile_id);
 extern void scv_draw_bg_tile(int row, int col, int tile_id);
 extern int scv_get_bg_tile(int row, int col);
 extern void scv_set_bg_scroll(int scroll_x, int scroll_y);
+extern void scv_vram_copy(int addr_hi, int addr_lo, char *src_array, int byte_count);
 extern void scv_load_bg_array(int pattern_slot, char *src_array, int pattern_count);
+extern void scv_load_bg_pattern_array(int pattern_slot, char *src_array, int pattern_count);
+extern void scv_load_bg_sprite_array(int pattern_slot, char *src_array, int pattern_count);
 extern void scv_draw_bg_tile_scrolled(int row, int col, int tile_id);
 
 /* Efficient incremental background scrolling (Sky Kid-inspired):
@@ -158,6 +182,7 @@ extern void scv_hide_sprite(int id);
  * converter, for example:
  *   #pragma scv_asset sprite hero "assets/hero.png"
  *   #pragma scv_asset spritesheet enemies "assets/enemies.png" 16 16
+ *   #pragma scv_asset backgroundsheet bg_tiles "assets/background.png" 16 16
  *
  * Each imported frame generates a loader function:
  *   scv_asset_<name>_load(pattern_slot)                for sprite
@@ -166,6 +191,12 @@ extern void scv_hide_sprite(int id);
  * The loader copies a 16x16 1bpp frame into sprite pattern memory at
  * 0x2000 + (64 + pattern_slot) * 0x20. Then scv_set_hw_sprite() displays it
  * from the hardware sprite table at 0x3200.
+ *
+ * Preferred custom background path:
+ *   use #pragma scv_asset background/backgroundsheet with 16x16 art,
+ *   load those patterns into bank 0-63, and place them with
+ *   scv_set_hw_sprite_raw(...). This is the working replacement for the old
+ *   "custom tile plane" assumption.
  *
  * Hardware sprite pattern values are forced into range 64-127.
  * Effective sprite pattern = 0x40 | (pattern & 0x3F).

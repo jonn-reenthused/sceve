@@ -75,6 +75,13 @@ class RomDataBlock:
 
 class L7801L65Emitter:
     STACK_INIT = 0xFFF0
+    DEFAULT_RAM_BASE = 0xFFA0
+    RECLAIMED_RAM_BASE = 0xFF80
+    SOFTWARE_SPRITE_APIS: Set[str] = {
+        "scv_set_sprite",
+        "scv_move_sprite",
+        "scv_hide_sprite",
+    }
 
     # Keep these APIs on dedicated arg slots to avoid clobbering during nested/inline flows.
     NON_SHARED_API_ARG_FUNCTIONS: Set[str] = {
@@ -92,6 +99,7 @@ class L7801L65Emitter:
         "svc_bios_clear_text_vram": "scv_bios_clear_text_vram",
         "svc_bios_clear_pattern_vram": "scv_bios_clear_pattern_vram",
         "svc_bios_clear_hw_sprites": "scv_bios_clear_hw_sprites",
+        "scv_load_bg_pattern_array": "scv_load_bg_sprite_array",
     }
 
     SCV_API_PARAMS: Dict[str, List[str]] = {
@@ -103,7 +111,10 @@ class L7801L65Emitter:
         "scv_draw_bg_tile": ["row", "col", "tile_id"],
         "scv_get_bg_tile": ["row", "col"],
         "scv_set_bg_scroll": ["scroll_x", "scroll_y"],
-        "scv_load_bg_array": ["pattern_slot", "pattern_count"],
+        "scv_vram_copy": ["addr_hi", "addr_lo", "src_array", "byte_count"],
+        "scv_load_bg_array": ["pattern_slot", "src_array", "pattern_count"],
+        "scv_load_bg_pattern_array": ["pattern_slot", "src_array", "pattern_count"],
+        "scv_load_bg_sprite_array": ["pattern_slot", "src_array", "pattern_count"],
         "scv_draw_bg_tile_scrolled": ["row", "col", "tile_id"],
         "scv_scroll_bg_right": [],
         "scv_scroll_bg_left": [],
@@ -457,7 +468,66 @@ class L7801L65Emitter:
             "    mov (scv_bg_scroll_y),a",
             "    ret",
         ],
+        "scv_vram_copy": [
+            "    mov a,({fn}__arg_addr_hi)",
+            "    mov h,a",
+            "    mov a,({fn}__arg_addr_lo)",
+            "    mov l,a",
+            "    mov a,({fn}__arg_byte_count)",
+            "    mov c,a",
+            "@{fn}_outer_loop",
+            "    mov a,c",
+            "    nei a,0",
+            "    jr {fn}_outer_done",
+            "    ldax (de)",
+            "    stax (hl)",
+            "    inx de",
+            "    inx hl",
+            "    mov a,c",
+            "    adi a,0xFF",
+            "    mov c,a",
+            "    jmp {fn}_outer_loop",
+            "@{fn}_outer_done",
+            "    ret",
+        ],
         "scv_load_bg_array": [
+            "    mvi h,0x20",
+            "    mvi l,0x00",
+            "    mov a,({fn}__arg_pattern_slot)",
+            "    ani a,0x3F",
+            "    mov b,a",
+            "@{fn}_slot_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_slot_done",
+            "    mvi a,0x10",
+            "    add l,a",
+            "    aci h,0",
+            "    dcr b",
+            "    jre {fn}_slot_loop",
+            "@{fn}_slot_done",
+            "    mov a,({fn}__arg_pattern_count)",
+            "    mov c,a",
+            "@{fn}_outer_loop",
+            "    mov a,c",
+            "    nei a,0",
+            "    jr {fn}_outer_done",
+            "    mvi b,0x10",
+            "@{fn}_copy_loop",
+            "    ldax (de)",
+            "    stax (hl)",
+            "    inx de",
+            "    inx hl",
+            "    dcr b",
+            "    jre {fn}_copy_loop",
+            "    mov a,c",
+            "    adi a,0xFF",
+            "    mov c,a",
+            "    jmp {fn}_outer_loop",
+            "@{fn}_outer_done",
+            "    ret",
+        ],
+        "scv_load_bg_sprite_array": [
             "    mvi h,0x20",
             "    mvi l,0x00",
             "    mov a,({fn}__arg_pattern_slot)",
@@ -1764,9 +1834,21 @@ class L7801L65Emitter:
         self.lines: List[str] = []
         self.data_symbols: List[str] = []
         self.symbol_values: Dict[str, int] = {}
+        self.global_data_symbols: List[str] = []
+        self.global_symbol_offsets: Dict[str, int] = {}
+        self.frame_data_symbols: Dict[str, List[str]] = {}
+        self.frame_symbol_offsets: Dict[str, Dict[str, int]] = {}
+        self.function_calls: Dict[str, Set[str]] = {}
+        self.global_size_total = 0
+        self.frame_size_total = 0
+        self.frame_sizes_by_function: Dict[str, int] = {}
+        self.user_global_scalar_names: Set[str] = set()
+        self.user_global_array_aliases: Set[str] = set()
+        self.user_global_struct_aliases: Set[str] = set()
         self.globals: Set[str] = set()
         self.current_fn: Optional[FunctionContext] = None
         self.function_params: Dict[str, List[str]] = {}
+        self.signed_param_names_by_function: Dict[str, Set[str]] = {}
         self.defined_functions: Set[str] = set()
         self.extern_functions: Set[str] = set()
         self.label_counter = 0
@@ -1787,6 +1869,9 @@ class L7801L65Emitter:
         self.ram_array_byte_lengths: Dict[str, int] = {}
         self.ram_array_element_sizes: Dict[str, int] = {}
         self.ram_array_struct_types: Dict[str, str] = {}
+        self.signed_symbols: Set[str] = set()
+        self.signed_ram_arrays: Set[str] = set()
+        self.signed_rom_arrays: Set[str] = set()
         self.struct_defs: Dict[str, List[str]] = {}
         self.struct_sizes: Dict[str, int] = {}  # Track struct sizes for array[i].field access
         self.struct_field_offsets: Dict[str, Dict[str, int]] = {}  # Track field offsets within structs
@@ -1795,6 +1880,19 @@ class L7801L65Emitter:
 
     def convert(self, source: str, source_path: Optional[Path] = None) -> str:
         self.source_path = source_path
+        self.data_symbols = []
+        self.symbol_values = {}
+        self.global_data_symbols = []
+        self.global_symbol_offsets = {}
+        self.frame_data_symbols = {}
+        self.frame_symbol_offsets = {}
+        self.function_calls = {}
+        self.global_size_total = 0
+        self.frame_size_total = 0
+        self.frame_sizes_by_function = {}
+        self.user_global_scalar_names = set()
+        self.user_global_array_aliases = set()
+        self.user_global_struct_aliases = set()
         self.asset_directives = []
         self.asset_functions = {}
         self.asset_bulk_functions = {}
@@ -1810,12 +1908,16 @@ class L7801L65Emitter:
         self.ram_array_byte_lengths = {}
         self.ram_array_element_sizes = {}
         self.ram_array_struct_types = {}
+        self.signed_symbols = set()
+        self.signed_ram_arrays = set()
+        self.signed_rom_arrays = set()
         self.struct_defs = {}
         self.struct_sizes = {}
         self.struct_field_offsets = {}
         self.struct_instances = {}
         self.expr_tmp_depth = 0
         self.function_params = {}
+        self.signed_param_names_by_function = {}
         self.defined_functions = set()
         self.extern_functions = set()
         parser = c_parser.CParser()
@@ -1838,6 +1940,7 @@ class L7801L65Emitter:
                 self._declare_global(ext)
 
         self._collect_function_signatures(ast)
+        self._collect_function_calls(ast)
         self._register_asset_function_signatures()
 
         self.lines.extend(
@@ -1882,6 +1985,7 @@ class L7801L65Emitter:
         self._emit_asset_data()
         self._emit("")
         self._emit("writebin(filename .. '.bin')")
+        self._finalize_symbol_layout()
         self._insert_symbol_table()
 
         return "\n".join(self.lines) + "\n"
@@ -1892,6 +1996,7 @@ class L7801L65Emitter:
 
     def _collect_function_signatures(self, ast: c_ast.FileAST) -> None:
         self.function_params = {}
+        self.signed_param_names_by_function = {}
         defined: Set[str] = set()
 
         # First pass: collect definitions (FuncDef nodes)
@@ -1900,12 +2005,16 @@ class L7801L65Emitter:
                 continue
             defined.add(ext.decl.name)
             params: List[str] = []
+            signed_params: Set[str] = set()
             decl = ext.decl.type
             if isinstance(decl, c_ast.FuncDecl) and decl.args:
                 for param in decl.args.params:
                     if isinstance(param, c_ast.Decl) and param.name:
                         params.append(param.name)
+                        if self._decl_is_signed_char(param):
+                            signed_params.add(param.name)
             self.function_params[ext.decl.name] = params
+            self.signed_param_names_by_function[ext.decl.name] = signed_params
 
         self.defined_functions = set(defined)
 
@@ -1922,11 +2031,35 @@ class L7801L65Emitter:
             if ext.name in self.SCV_API_PARAMS:
                 continue
             params = []
+            signed_params: Set[str] = set()
             if ext.type.args:
                 for param in ext.type.args.params:
                     if isinstance(param, c_ast.Decl) and param.name:
                         params.append(param.name)
+                        if self._decl_is_signed_char(param):
+                            signed_params.add(param.name)
             self.function_params[ext.name] = params
+            self.signed_param_names_by_function[ext.name] = signed_params
+
+    def _collect_function_calls(self, ast: c_ast.FileAST) -> None:
+        self.function_calls = {name: set() for name in self.defined_functions}
+        for ext in ast.ext:
+            if not isinstance(ext, c_ast.FuncDef):
+                continue
+            caller = ext.decl.name
+            if caller not in self.defined_functions:
+                continue
+            self.function_calls[caller] = self._find_called_user_functions(ext.body)
+
+    def _find_called_user_functions(self, node: c_ast.Node) -> Set[str]:
+        calls: Set[str] = set()
+        for _, child in node.children():
+            if isinstance(child, c_ast.FuncCall) and isinstance(child.name, c_ast.ID):
+                callee = self.API_ALIASES.get(child.name.name, child.name.name)
+                if callee in self.defined_functions:
+                    calls.add(callee)
+            calls.update(self._find_called_user_functions(child))
+        return calls
 
     def _emit_extern_stubs(self) -> None:
         if not self.extern_functions:
@@ -2025,10 +2158,12 @@ class L7801L65Emitter:
         function_name = asset_fn.function_name
         frame_label = asset_fn.frame.symbol_name
         arg_slot = self._arg_symbol_name(function_name, "pattern_slot")
+        byte_count = len(asset_fn.frame.bytes_out)
+        byte_count_imm = self._fmt_imm(byte_count)
         if asset_fn.pattern_mode == "raw":
             base_hi = "0x20"
             slot_mask = "0x7F"
-        elif asset_fn.pattern_mode == "background":
+        elif asset_fn.pattern_mode in {"background", "bg_char"}:
             base_hi = "0x20"
             slot_mask = "0x3F"
         else:
@@ -2045,13 +2180,13 @@ class L7801L65Emitter:
             "    mov a,b",
             "    nei a,0",
             f"    jr {function_name}_slot_done",
-            "    mvi a,0x20",
+            f"    mvi a,{byte_count_imm}",
             "    add e,a",
             "    aci d,0",
             "    dcr b",
             f"    jre {function_name}_slot_loop",
             f"@{function_name}_slot_done",
-            "    mvi b,0x20",
+            f"    mvi b,{byte_count_imm}",
             f"@{function_name}_copy_loop",
             "    ldaxi (hl)",
             "    stax (de)",
@@ -2297,10 +2432,15 @@ class L7801L65Emitter:
         for frame in frames:
             function_name = frame.loader_name
             frame_loader_names.append(function_name)
+            pattern_mode = "background"
+            if is_background_asset and len(frame.bytes_out) == 16:
+                pattern_mode = "bg_char"
+            elif not is_background_asset:
+                pattern_mode = "sprite"
             self.asset_functions[function_name] = AssetFunction(
                 function_name=function_name,
                 frame=frame,
-                pattern_mode="background" if is_background_asset else "sprite",
+                pattern_mode=pattern_mode,
             )
             self.function_params[function_name] = ["pattern_slot"]
             self.extern_functions.add(function_name)
@@ -2360,17 +2500,96 @@ class L7801L65Emitter:
         self._emit(f"    -- TODO unsupported: {message}")
 
     def _alloc_symbol(self, name: str, init: int = 0) -> str:
-        if name not in self.symbol_values:
-            addr = self.ram_base + len(self.symbol_values)
-            if addr >= self.STACK_INIT:
-                raise ConversionError(
-                    f"RAM symbol overflow: {name} would be allocated at 0x{addr:04X}, "
-                    f"which collides with stack at 0x{self.STACK_INIT:04X}. "
-                    "Lower --ram-base, reduce symbols, or adjust stack init."
-                )
-            self.symbol_values[name] = addr
-            self.data_symbols.append(name)
+        owner_fn = self._symbol_owner_function(name)
+        if owner_fn is None:
+            if name not in self.global_symbol_offsets:
+                self.global_symbol_offsets[name] = len(self.global_symbol_offsets)
+                self.global_data_symbols.append(name)
+            return name
+
+        frame_offsets = self.frame_symbol_offsets.setdefault(owner_fn, {})
+        if name not in frame_offsets:
+            frame_offsets[name] = len(frame_offsets)
+            self.frame_data_symbols.setdefault(owner_fn, []).append(name)
         return name
+
+    def _symbol_owner_function(self, name: str) -> Optional[str]:
+        if "__" not in name:
+            return None
+        prefix = name.split("__", 1)[0]
+        if prefix in self.defined_functions:
+            return prefix
+        return None
+
+    def _alloc_temp_symbol(self, name: str) -> str:
+        if self.current_fn is None:
+            return self._alloc_symbol(name)
+        return self._alloc_symbol(f"{self.current_fn.name}__{name}")
+
+    def _finalize_symbol_layout(self) -> None:
+        self.global_size_total = len(self.global_data_symbols)
+        frame_sizes = {
+            fn: len(self.frame_data_symbols.get(fn, []))
+            for fn in self.defined_functions
+        }
+        self.frame_sizes_by_function = dict(frame_sizes)
+
+        callers: Dict[str, Set[str]] = {fn: set() for fn in self.defined_functions}
+        for caller, callees in self.function_calls.items():
+            for callee in callees:
+                if callee in callers:
+                    callers[callee].add(caller)
+
+        memo: Dict[str, int] = {}
+        visiting: Set[str] = set()
+
+        def prefix_size(fn: str) -> int:
+            if fn in memo:
+                return memo[fn]
+            if fn in visiting:
+                raise ConversionError(
+                    "Recursive user-defined function calls are not supported by the current RAM frame allocator"
+                )
+            visiting.add(fn)
+            best = 0
+            for caller in callers.get(fn, set()):
+                best = max(best, prefix_size(caller) + frame_sizes.get(caller, 0))
+            visiting.remove(fn)
+            memo[fn] = best
+            return best
+
+        frame_bases: Dict[str, int] = {}
+        frame_area = 0
+        for fn in sorted(self.defined_functions):
+            prefix = prefix_size(fn)
+            frame_bases[fn] = self.global_size_total + prefix
+            frame_area = max(frame_area, prefix + frame_sizes.get(fn, 0))
+
+        total_ram = self.global_size_total + frame_area
+        if total_ram == 0:
+            ram_top = self.ram_base - 1
+        else:
+            ram_top = self.ram_base + total_ram - 1
+        if ram_top >= self.STACK_INIT:
+            raise ConversionError(
+                f"RAM symbol overflow: top address 0x{ram_top:04X} collides with stack at 0x{self.STACK_INIT:04X}. "
+                "Reduce symbols, lower --ram-base, or adjust stack init."
+            )
+
+        self.frame_size_total = frame_area
+        self.symbol_values = {}
+        self.data_symbols = []
+
+        for index, sym in enumerate(self.global_data_symbols):
+            self.symbol_values[sym] = self.ram_base + index
+            self.data_symbols.append(sym)
+
+        for fn in sorted(self.defined_functions, key=lambda item: (frame_bases[item], item)):
+            base_addr = self.ram_base + frame_bases[fn]
+            for sym in self.frame_data_symbols.get(fn, []):
+                offset = self.frame_symbol_offsets[fn][sym]
+                self.symbol_values[sym] = base_addr + offset
+                self.data_symbols.append(sym)
 
     def _declare_global(self, decl: c_ast.Decl) -> None:
         self._ensure_known_types_from_decl(decl)
@@ -2402,6 +2621,8 @@ class L7801L65Emitter:
                 values = self._eval_const_array_u8(decl, decl.init)
                 dims = self._extract_array_dims(decl.type)
                 self._register_rom_data_block(decl.name, values, dims)
+                if self._decl_is_signed_char(decl):
+                    self.signed_rom_arrays.add(decl.name)
                 return
 
             if decl.init is not None:
@@ -2436,14 +2657,19 @@ class L7801L65Emitter:
                         f"Could not determine struct size for '{struct_name}' at {coord}"
                     )
                 self._alloc_ram_array(decl.name, length, struct_size, struct_name)
+                self.user_global_array_aliases.add(decl.name)
             else:
                 self._alloc_ram_array(decl.name, length)
+                self.user_global_array_aliases.add(decl.name)
+            if self._decl_is_signed_char(decl):
+                self.signed_ram_arrays.add(decl.name)
             return
 
         struct_type = self._extract_struct_type_from_decl(decl)
         if struct_type is not None:
             fields = self._flatten_struct_fields(struct_type)
             self._alloc_struct_instance(decl.name, fields)
+            self.user_global_struct_aliases.add(decl.name)
             return
 
         if not isinstance(decl.type, c_ast.TypeDecl):
@@ -2457,9 +2683,14 @@ class L7801L65Emitter:
                     f"const global '{decl.name}' requires an initializer at {coord}"
                 )
             self.rom_constants[decl.name] = self._eval_const_u8(decl.init)
+            if self._decl_is_signed_char(decl):
+                self.signed_symbols.add(decl.name)
             return
 
         self._alloc_symbol(decl.name)
+        if self._decl_is_signed_char(decl):
+            self.signed_symbols.add(decl.name)
+        self.user_global_scalar_names.add(decl.name)
 
     def _insert_symbol_table(self) -> None:
         symbol_lines: List[str] = []
@@ -2505,6 +2736,10 @@ class L7801L65Emitter:
             return self.current_fn.param_symbols[name]
         if name in self.symbol_values:
             return name
+        if self.current_fn:
+            frame_name = f"{self.current_fn.name}__{name}"
+            if frame_name in self.frame_symbol_offsets.get(self.current_fn.name, {}):
+                return frame_name
         if name in self.globals:
             return self._alloc_symbol(name)
         if self.current_fn:
@@ -2919,6 +3154,26 @@ class L7801L65Emitter:
             t = getattr(t, "type", None)
         return None
 
+    def _type_node_is_signed_char(self, type_node: Optional[c_ast.Node]) -> bool:
+        t = type_node
+        while t is not None:
+            if isinstance(t, c_ast.TypeDecl):
+                t = t.type
+                continue
+            if isinstance(t, c_ast.ArrayDecl):
+                t = t.type
+                continue
+            break
+
+        if not isinstance(t, c_ast.IdentifierType):
+            return False
+
+        names = set(t.names)
+        return "signed" in names and "char" in names and "unsigned" not in names
+
+    def _decl_is_signed_char(self, decl: c_ast.Decl) -> bool:
+        return self._type_node_is_signed_char(decl.type)
+
     def _alloc_struct_instance(self, alias: str, fields: List[str]) -> None:
         mapping: Dict[str, str] = {}
         for field in fields:
@@ -2983,6 +3238,45 @@ class L7801L65Emitter:
             return name
         return None
 
+    def _expr_is_signed_char(self, expr: c_ast.Node) -> bool:
+        if isinstance(expr, c_ast.ID):
+            try:
+                sym = self._resolve_symbol(expr.name)
+            except ConversionError:
+                return False
+            return sym in self.signed_symbols
+
+        if isinstance(expr, c_ast.ArrayRef):
+            if isinstance(expr.name, c_ast.ID):
+                ram_alias = self._resolve_ram_array_alias(expr.name.name)
+                if ram_alias is not None:
+                    return ram_alias in self.signed_ram_arrays
+                rom_alias = self._resolve_rom_array_alias(expr.name.name)
+                if rom_alias is not None:
+                    return rom_alias in self.signed_rom_arrays
+            return False
+
+        if isinstance(expr, c_ast.StructRef):
+            try:
+                sym = self._resolve_struct_field_symbol(expr)
+            except ConversionError:
+                return False
+            return sym in self.signed_symbols
+
+        if isinstance(expr, c_ast.UnaryOp):
+            if expr.op == "-":
+                return True
+            if expr.op in {"+", "p++", "p--", "*"}:
+                return self._expr_is_signed_char(expr.expr)
+            return False
+
+        if isinstance(expr, c_ast.BinaryOp):
+            if expr.op in {"+", "-", "*", "&", "|", "^", "<<", ">>"}:
+                return self._expr_is_signed_char(expr.left) or self._expr_is_signed_char(expr.right)
+            return False
+
+        return False
+
     def _emit_function(self, func: c_ast.FuncDef) -> None:
         fn_name = func.decl.name
         fn = f"fn_{fn_name}"
@@ -2991,6 +3285,8 @@ class L7801L65Emitter:
         for param_name in self.function_params.get(fn_name, []):
             slot = self._alloc_symbol(self._arg_symbol_name(fn_name, param_name))
             param_symbols[param_name] = slot
+            if param_name in self.signed_param_names_by_function.get(fn_name, set()):
+                self.signed_symbols.add(slot)
 
         self.current_fn = FunctionContext(
             name=fn_name,
@@ -3096,6 +3392,8 @@ class L7801L65Emitter:
             if is_const:
                 values = self._eval_const_array_u8(decl, decl.init)
                 self._register_rom_data_block(scoped_alias, values)
+                if self._decl_is_signed_char(decl):
+                    self.signed_rom_arrays.add(scoped_alias)
                 return
 
             if decl.init is not None:
@@ -3132,6 +3430,8 @@ class L7801L65Emitter:
                 self._alloc_ram_array(scoped_alias, length, struct_size, struct_name)
             else:
                 self._alloc_ram_array(scoped_alias, length)
+            if self._decl_is_signed_char(decl):
+                self.signed_ram_arrays.add(scoped_alias)
             return
 
         struct_type = self._extract_struct_type_from_decl(decl)
@@ -3157,9 +3457,13 @@ class L7801L65Emitter:
                     f"const local '{decl.name}' requires an initializer at {coord}"
                 )
             self.rom_constants[scoped_name] = self._eval_const_u8(decl.init)
+            if self._decl_is_signed_char(decl):
+                self.signed_symbols.add(scoped_name)
             return
 
         sym = self._resolve_symbol(decl.name)
+        if self._decl_is_signed_char(decl):
+            self.signed_symbols.add(sym)
         if decl.init is not None:
             self._emit_expr_to_a(decl.init)
             self._emit(f"    mov ({sym}),a")
@@ -3407,7 +3711,52 @@ class L7801L65Emitter:
             self._emit(f"    call fn_{callee}")
             return
 
-        if callee == "scv_load_bg_array":
+        if callee == "scv_vram_copy":
+            if len(args) != 4:
+                raise ConversionError(
+                    f"Call arity mismatch for {callee}: expected 4, got {len(args)}"
+                )
+
+            addr_hi = self._alloc_symbol(self._arg_symbol_name(callee, "addr_hi"))
+            addr_lo = self._alloc_symbol(self._arg_symbol_name(callee, "addr_lo"))
+            byte_count = self._alloc_symbol(self._arg_symbol_name(callee, "byte_count"))
+
+            self._emit_expr_to_a(args[0])
+            self._emit(f"    mov ({addr_hi}),a")
+            self._emit_expr_to_a(args[1])
+            self._emit(f"    mov ({addr_lo}),a")
+
+            if not isinstance(args[2], c_ast.ID):
+                coord = getattr(args[2], "coord", "unknown")
+                raise ConversionError(
+                    f"scv_vram_copy source must be a ROM or RAM array identifier at {coord}"
+                )
+
+            src_alias = args[2].name
+            rom_alias = self._resolve_rom_array_alias(src_alias)
+            ram_alias = self._resolve_ram_array_alias(src_alias)
+            if rom_alias is None and ram_alias is None:
+                coord = getattr(args[2], "coord", "unknown")
+                raise ConversionError(
+                    f"scv_vram_copy source '{src_alias}' must be a ROM or RAM array identifier at {coord}"
+                )
+
+            self._emit_expr_to_a(args[3])
+            self._emit(f"    mov ({byte_count}),a")
+
+            if rom_alias is not None:
+                self._emit(f"    lxi de,{self.rom_array_labels[rom_alias]}")
+            else:
+                self._emit(f"    lxi de,{self.ram_array_labels[ram_alias]}")
+
+            if params is None:
+                params = self.SCV_API_PARAMS[callee]
+                self.function_params[callee] = params
+            self.extern_functions.add(callee)
+            self._emit(f"    call fn_{callee}")
+            return
+
+        if callee in {"scv_load_bg_array", "scv_load_bg_sprite_array"}:
             if len(args) != 3:
                 raise ConversionError(
                     f"Call arity mismatch for {callee}: expected 3, got {len(args)}"
@@ -4080,9 +4429,9 @@ class L7801L65Emitter:
 
         if op in {"+", "-", "&", "|", "^", "*", "<<", ">>"}:
             if op == "*":
-                lhs_slot = self._alloc_symbol("arith__tmp0")
-                rhs_slot = self._alloc_symbol("arith__tmp1")
-                acc_slot = self._alloc_symbol("arith__tmp2")
+                lhs_slot = self._alloc_temp_symbol("arith__tmp0")
+                rhs_slot = self._alloc_temp_symbol("arith__tmp1")
+                acc_slot = self._alloc_temp_symbol("arith__tmp2")
                 loop_label = self._new_label("mul_loop")
                 body_label = self._new_label("mul_body")
                 done_label = self._new_label("mul_done")
@@ -4125,8 +4474,8 @@ class L7801L65Emitter:
 
             depth = self.expr_tmp_depth
             self.expr_tmp_depth += 1
-            lhs_slot = self._alloc_symbol(f"arith__tmp_expr_{depth * 2}")
-            rhs_slot = self._alloc_symbol(f"arith__tmp_expr_{depth * 2 + 1}")
+            lhs_slot = self._alloc_temp_symbol(f"arith__tmp_expr_{depth * 2}")
+            rhs_slot = self._alloc_temp_symbol(f"arith__tmp_expr_{depth * 2 + 1}")
 
             self._emit_expr_to_a(binary.left)
             self._emit(f"    mov ({lhs_slot}),a")
@@ -4165,10 +4514,12 @@ class L7801L65Emitter:
         true_label = self._new_label("cmp_true")
         false_label = self._new_label("cmp_false")
         end_label = self._new_label("cmp_end")
+        check_label = self._new_label("cmp_check")
         depth = self.expr_tmp_depth
+        use_signed = self._expr_is_signed_char(binary.left) or self._expr_is_signed_char(binary.right)
         self.expr_tmp_depth += 1
-        lhs_slot = self._alloc_symbol(f"arith__tmp_expr_{depth * 2}")
-        rhs_slot = self._alloc_symbol(f"arith__tmp_expr_{depth * 2 + 1}")
+        lhs_slot = self._alloc_temp_symbol(f"arith__tmp_expr_{depth * 2}")
+        rhs_slot = self._alloc_temp_symbol(f"arith__tmp_expr_{depth * 2 + 1}")
 
         self._emit_expr_to_a(binary.left)
         self._emit(f"    mov ({lhs_slot}),a")
@@ -4178,6 +4529,13 @@ class L7801L65Emitter:
         self._emit("    mov b,a")
         self._emit(f"    mov a,({rhs_slot})")
         self._emit("    mov c,a")
+        if use_signed:
+            self._emit("    mvi a,0x80")
+            self._emit("    xra a,b")
+            self._emit("    mov b,a")
+            self._emit("    mvi a,0x80")
+            self._emit("    xra a,c")
+            self._emit("    mov c,a")
         self._emit("    mov a,b")
         self._emit("    sub a,c")
         self.expr_tmp_depth -= 1
@@ -4192,27 +4550,28 @@ class L7801L65Emitter:
             self._emit(f"    jr {false_label}")
             self._emit(f"    jmp {true_label}")
         elif op == "<":
-            # lti-based lowering has shown unreliable behavior for bounds checks in SCV demos.
-            # Re-express left < right as (right - left) > 0 and use gti, which is stable.
-            self._emit("    mov a,c")
-            self._emit("    sub a,b")
-            self._emit("    gti a,0")
+            self._emit("    skc")
             self._emit(f"    jr {false_label}")
             self._emit(f"    jmp {true_label}")
         elif op == ">":
-            self._emit("    gti a,0")
+            self._emit("    skc")
+            self._emit(f"    jmp {check_label}")
+            self._emit(f"    jmp {false_label}")
+            self._emit(f"@{check_label}")
+            self._emit("    nei a,0")
             self._emit(f"    jr {false_label}")
             self._emit(f"    jmp {true_label}")
         elif op == "<=":
-            self._emit("    gti a,0")
+            self._emit("    skc")
+            self._emit(f"    jmp {check_label}")
             self._emit(f"    jr {true_label}")
-            self._emit(f"    jmp {false_label}")
+            self._emit(f"    jmp {true_label}")
+            self._emit(f"@{check_label}")
+            self._emit("    eqi a,0")
+            self._emit(f"    jr {false_label}")
+            self._emit(f"    jmp {true_label}")
         elif op == ">=":
-            # lti-based lowering has been unreliable in bounds-check loops.
-            # Re-express left >= right as not ((right - left) > 0) and use gti.
-            self._emit("    mov a,c")
-            self._emit("    sub a,b")
-            self._emit("    gti a,0")
+            self._emit("    skc")
             self._emit(f"    jr {true_label}")
             self._emit(f"    jmp {false_label}")
 
@@ -4224,8 +4583,8 @@ class L7801L65Emitter:
         self._emit(f"@{end_label}")
 
     def _emit_shift_left(self, left: c_ast.Node, right: c_ast.Node) -> None:
-        value_slot = self._alloc_symbol("arith__tmp0")
-        count_slot = self._alloc_symbol("arith__tmp1")
+        value_slot = self._alloc_temp_symbol("arith__tmp0")
+        count_slot = self._alloc_temp_symbol("arith__tmp1")
         loop_label = self._new_label("shiftl_loop")
         body_label = self._new_label("shiftl_body")
         done_label = self._new_label("shiftl_done")
@@ -4255,9 +4614,9 @@ class L7801L65Emitter:
         self._emit(f"    mov a,({value_slot})")
 
     def _emit_shift_right(self, left: c_ast.Node, right: c_ast.Node) -> None:
-        value_slot = self._alloc_symbol("arith__tmp0")
-        count_slot = self._alloc_symbol("arith__tmp1")
-        quot_slot = self._alloc_symbol("arith__tmp2")
+        value_slot = self._alloc_temp_symbol("arith__tmp0")
+        count_slot = self._alloc_temp_symbol("arith__tmp1")
+        quot_slot = self._alloc_temp_symbol("arith__tmp2")
         outer_loop_label = self._new_label("shiftr_outer_loop")
         outer_body_label = self._new_label("shiftr_outer_body")
         outer_done_label = self._new_label("shiftr_outer_done")
@@ -4345,19 +4704,124 @@ class L7801L65Emitter:
         return f"0x{value:02X}"
 
     def get_memory_stats(self) -> Dict[str, int]:
-        ram_used = len(self.data_symbols)
+        ram_used = self.global_size_total + self.frame_size_total
         if ram_used == 0:
             ram_top = self.ram_base - 1
         else:
             ram_top = self.ram_base + ram_used - 1
         stack_headroom = self.STACK_INIT - (ram_top + 1)
+        largest_frame_name = ""
+        largest_frame_size = 0
+        if self.frame_sizes_by_function:
+            largest_frame_name, largest_frame_size = max(
+                self.frame_sizes_by_function.items(),
+                key=lambda item: (item[1], item[0]),
+            )
         return {
             "ram_base": self.ram_base,
             "ram_used": ram_used,
             "ram_top": ram_top,
             "stack_init": self.STACK_INIT,
             "stack_headroom": stack_headroom,
+            "global_bytes": self.global_size_total,
+            "frame_bytes": self.frame_size_total,
+            "largest_frame_size": largest_frame_size,
+            "largest_frame_name": largest_frame_name,
         }
+
+    def _is_runtime_internal_symbol(self, sym: str) -> bool:
+        return (
+            sym.startswith("scv_")
+            or sym.startswith("svc_")
+            or sym.startswith("sprintf__")
+            or sym.startswith("arith__")
+            or sym.startswith("scv_api__")
+            or sym.startswith("scv_asset__")
+            or "__arg_" in sym
+        )
+
+    def get_persistent_memory_report_lines(self) -> List[str]:
+        categories: List[Tuple[str, List[Tuple[int, str, int]]]] = []
+        consumed: Set[str] = set()
+
+        user_arrays: List[Tuple[int, str, int]] = []
+        for alias in sorted(self.user_global_array_aliases):
+            base_sym = self.ram_array_labels.get(alias)
+            if base_sym is None or base_sym not in self.symbol_values:
+                continue
+            addr = self.symbol_values[base_sym]
+            size = self.ram_array_byte_lengths.get(alias, 0)
+            user_arrays.append((addr, alias, size))
+            consumed.update(sym for sym in self.global_data_symbols if sym.startswith(f"{alias}__ram_"))
+        categories.append(("user arrays", user_arrays))
+
+        user_structs: List[Tuple[int, str, int]] = []
+        for alias in sorted(self.user_global_struct_aliases):
+            mapping = self.struct_instances.get(alias)
+            if not mapping:
+                continue
+            symbols = [sym for sym in mapping.values() if sym in self.symbol_values]
+            if not symbols:
+                continue
+            addr = min(self.symbol_values[sym] for sym in symbols)
+            size = len(symbols)
+            user_structs.append((addr, alias, size))
+            consumed.update(symbols)
+        categories.append(("user structs", user_structs))
+
+        user_scalars: List[Tuple[int, str, int]] = []
+        runtime_fixed: List[Tuple[int, str, int]] = []
+        for sym in self.global_data_symbols:
+            if sym in consumed or sym not in self.symbol_values:
+                continue
+            item = (self.symbol_values[sym], sym, 1)
+            if sym in self.user_global_scalar_names and not self._is_runtime_internal_symbol(sym):
+                user_scalars.append(item)
+            else:
+                runtime_fixed.append(item)
+        categories.append(("user scalars", sorted(user_scalars)))
+        categories.append(("sdk/runtime fixed", sorted(runtime_fixed)))
+
+        lines: List[str] = []
+        for label, items in categories:
+            if not items:
+                continue
+            total = sum(size for _, _, size in items)
+            lines.append(f"{label} ({total} bytes):")
+            for addr, name, size in items:
+                lines.append(f"  {name}: {size} byte{'s' if size != 1 else ''} @ 0x{addr:04X}")
+        return lines
+
+    @classmethod
+    def detect_default_ram_base(
+        cls,
+        source: str,
+        source_path: Optional[Path],
+        strict: bool,
+    ) -> int:
+        detector = cls(strict=strict, ram_base=cls.DEFAULT_RAM_BASE)
+        detector.source_path = source_path
+        parser = c_parser.CParser()
+        sanitized = detector._sanitize_source(
+            source,
+            current_path=source_path,
+            include_stack=set(),
+        )
+        ast = parser.parse(sanitized)
+        if cls._ast_uses_software_sprites(ast):
+            return cls.DEFAULT_RAM_BASE
+        return cls.RECLAIMED_RAM_BASE
+
+    @classmethod
+    def _ast_uses_software_sprites(cls, node: c_ast.Node) -> bool:
+        for _, child in node.children():
+            if isinstance(child, c_ast.FuncCall):
+                name_node = child.name
+                if isinstance(name_node, c_ast.ID) and name_node.name in cls.SOFTWARE_SPRITE_APIS:
+                    return True
+            if cls._ast_uses_software_sprites(child):
+                return True
+        return False
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
@@ -4368,8 +4832,12 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("-o", "--output", help="Path to output .l7801 file")
     parser.add_argument(
         "--ram-base",
-        default="0xFFA0",
-        help="Base RAM address for allocated symbols (default: 0xFFA0; 0xFF80-0xFF9F reserved for sprite shadow table)",
+        default="auto",
+        help=(
+            "Base RAM address for allocated symbols "
+            "(default: auto; uses 0xFFA0 when software-sprite APIs are used, "
+            "otherwise reclaims 0xFF80-0xFF9F)"
+        ),
     )
     parser.add_argument(
         "--non-strict",
@@ -4477,12 +4945,6 @@ def main(argv: List[str]) -> int:
     args = parse_args(argv)
 
     try:
-        ram_base = int(args.ram_base, 0)
-    except ValueError as exc:
-        print(f"error: invalid --ram-base value: {args.ram_base}", file=sys.stderr)
-        return 2
-
-    try:
         warn_headroom = int(args.warn_headroom, 0)
     except ValueError:
         print(f"error: invalid --warn-headroom value: {args.warn_headroom}", file=sys.stderr)
@@ -4492,6 +4954,24 @@ def main(argv: List[str]) -> int:
     output_path = Path(args.output) if args.output else input_path.with_suffix(".l7801")
 
     source = input_path.read_text(encoding="utf-8")
+
+    if args.ram_base == "auto":
+        try:
+            ram_base = L7801L65Emitter.detect_default_ram_base(
+                source,
+                source_path=input_path,
+                strict=not args.non_strict,
+            )
+        except ConversionError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+    else:
+        try:
+            ram_base = int(args.ram_base, 0)
+        except ValueError:
+            print(f"error: invalid --ram-base value: {args.ram_base}", file=sys.stderr)
+            return 2
+
     emitter = L7801L65Emitter(strict=not args.non_strict, ram_base=ram_base)
 
     try:
@@ -4502,6 +4982,17 @@ def main(argv: List[str]) -> int:
 
     output_path.write_text(output, encoding="utf-8")
     print(f"wrote {output_path}")
+    if args.ram_base == "auto":
+        if ram_base == L7801L65Emitter.RECLAIMED_RAM_BASE:
+            print(
+                "memory policy: no software-sprite API calls detected; "
+                "reclaiming shadow RAM with ram_base=0xFF80"
+            )
+        else:
+            print(
+                "memory policy: software-sprite API calls detected; "
+                "reserving shadow RAM with ram_base=0xFFA0"
+            )
 
     stats = emitter.get_memory_stats()
     print(
@@ -4512,6 +5003,20 @@ def main(argv: List[str]) -> int:
         f"stack_init=0x{stats['stack_init']:04X}, "
         f"headroom={stats['stack_headroom']} bytes"
     )
+    print(
+        "memory breakdown: "
+        f"globals={stats['global_bytes']} bytes, "
+        f"frame_area={stats['frame_bytes']} bytes, "
+        f"largest_frame={stats['largest_frame_size']} bytes"
+        + (
+            f" ({stats['largest_frame_name']})"
+            if stats["largest_frame_name"]
+            else ""
+        )
+    )
+    for index, line in enumerate(emitter.get_persistent_memory_report_lines()):
+        prefix = "persistent RAM detail: " if index == 0 else ""
+        print(f"{prefix}{line}")
     if stats["stack_headroom"] < warn_headroom:
         print(
             "warning: low RAM/stack headroom: "
