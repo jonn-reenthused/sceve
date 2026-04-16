@@ -105,6 +105,9 @@ class L7801L65Emitter:
     SCV_API_PARAMS: Dict[str, List[str]] = {
         "strlen": ["str"],
         "sprintf": ["dst", "fmt", "value"],
+        "scv_random_seed": ["seed"],
+        "scv_random_u8": [],
+        "scv_random_range": ["min_value", "max_value"],
         "scv_print_char": ["x", "y", "ch"],
         "scv_print_string": ["x", "y"],
         "scv_draw_tile": ["row", "col", "tile_id"],
@@ -327,6 +330,71 @@ class L7801L65Emitter:
             "    adi a,0x01",
             "    mov (sprintf__tmp_count),a",
             "    jmp {fn}_loop",
+        ],
+        "scv_random_seed": [
+            "    mov a,({fn}__arg_seed)",
+            "    eqi a,0",
+            "    skz",
+            "    jmp {fn}_store_seed",
+            "    mvi a,0xA5",
+            "@{fn}_store_seed",
+            "    mov (scv_random__state),a",
+            "    ret",
+        ],
+        "scv_random_u8": [
+            "    mov a,(scv_random__state)",
+            "    eqi a,0",
+            "    skz",
+            "    jmp {fn}_seeded",
+            "    mvi a,0xA5",
+            "@{fn}_seeded",
+            "    mov b,a",
+            "    add a,a",
+            "    add a,a",
+            "    add a,b",
+            "    adi a,0x01",
+            "    mov (scv_random__state),a",
+            "    ret",
+        ],
+        "scv_random_range": [
+            "    mov a,({fn}__arg_min_value)",
+            "    mov b,a",
+            "    mov a,({fn}__arg_max_value)",
+            "    mov c,a",
+            "    mov a,c",
+            "    sub a,b",
+            "    skc",
+            "    jmp {fn}_check_full_range",
+            "    mov a,b",
+            "    ret",
+            "@{fn}_check_full_range",
+            "    adi a,0x01",
+            "    mov ({fn}__tmp_span),a",
+            "    eqi a,0",
+            "    skz",
+            "    jmp {fn}_have_span",
+            "    call fn_scv_random_u8",
+            "    ret",
+            "@{fn}_have_span",
+            "    call fn_scv_random_u8",
+            "    mov ({fn}__tmp_rand),a",
+            "@{fn}_reduce_loop",
+            "    mov a,({fn}__tmp_rand)",
+            "    mov b,a",
+            "    mov a,({fn}__tmp_span)",
+            "    mov c,a",
+            "    mov a,b",
+            "    sub a,c",
+            "    skc",
+            "    jmp {fn}_apply_subtract",
+            "    mov a,({fn}__tmp_rand)",
+            "    mov b,a",
+            "    mov a,({fn}__arg_min_value)",
+            "    add a,b",
+            "    ret",
+            "@{fn}_apply_subtract",
+            "    mov ({fn}__tmp_rand),a",
+            "    jmp {fn}_reduce_loop",
         ],
         "scv_print_char": [
             "    mvi h,0x30",
@@ -2069,6 +2137,10 @@ class L7801L65Emitter:
             self.extern_functions.add("scv_print_char")
             if "scv_print_char" not in self.function_params:
                 self.function_params["scv_print_char"] = self.SCV_API_PARAMS["scv_print_char"]
+        if "scv_random_range" in self.extern_functions:
+            self.extern_functions.add("scv_random_u8")
+            if "scv_random_u8" not in self.function_params:
+                self.function_params["scv_random_u8"] = self.SCV_API_PARAMS["scv_random_u8"]
 
         self._emit("-- *** stubs for extern functions — replace with real implementations ***")
         self._emit("")
@@ -2093,6 +2165,11 @@ class L7801L65Emitter:
                 self._alloc_symbol("sprintf__tmp_hundreds")
                 self._alloc_symbol("sprintf__tmp_tens")
                 self._alloc_symbol("sprintf__tmp_started")
+            elif fn == "scv_random_seed" or fn == "scv_random_u8" or fn == "scv_random_range":
+                self._alloc_symbol("scv_random__state")
+                if fn == "scv_random_range":
+                    self._alloc_symbol("scv_random_range__tmp_span")
+                    self._alloc_symbol("scv_random_range__tmp_rand")
 
             self._emit(f"@fn_{fn}")
             asset_fn = self.asset_functions.get(fn)
@@ -3625,15 +3702,106 @@ class L7801L65Emitter:
                     f"Call arity mismatch for {callee}: expected 3, got {len(args)}"
                 )
 
-            self._emit_expr_to_a(args[0])
-            src_slot_x = self._alloc_symbol(self._arg_symbol_name(callee, "x"))
-            self._emit(f"    mov ({src_slot_x}),a")
+            def emit_rom_row_pointer_to_de(row_expr: c_ast.ArrayRef) -> bool:
+                def emit_hl_to_de() -> None:
+                    self._emit("    mov a,h")
+                    self._emit("    mov d,a")
+                    self._emit("    mov a,l")
+                    self._emit("    mov e,a")
 
-            self._emit_expr_to_a(args[1])
-            src_slot_y = self._alloc_symbol(self._arg_symbol_name(callee, "y"))
-            self._emit(f"    mov ({src_slot_y}),a")
+                if not isinstance(row_expr.name, c_ast.ID):
+                    return False
 
-            def emit_inline_chars(values: List[int]) -> None:
+                alias = self._resolve_rom_array_alias(row_expr.name.name)
+                if alias is None:
+                    return False
+
+                dims = self.rom_array_dims.get(alias, [])
+                if len(dims) < 2:
+                    return False
+
+                row_width = dims[1]
+                label = self.rom_array_labels[alias]
+
+                const_row_idx: Optional[int] = None
+                try:
+                    const_row_idx = self._eval_const_u8(row_expr.subscript)
+                except ConversionError:
+                    const_row_idx = None
+
+                if const_row_idx is not None:
+                    row_offset = const_row_idx * row_width
+                    self._emit(f"    lxi hl,{label}")
+                    if row_offset != 0:
+                        self._emit(f"    mvi a,{self._fmt_imm(row_offset & 0xFF)}")
+                        self._emit("    add l,a")
+                        self._emit("    aci h,0")
+                    emit_hl_to_de()
+                    return True
+
+                self._emit_expr_to_a(row_expr.subscript)
+                if row_width == 1:
+                    pass
+                else:
+                    self._emit("    mov c,a")
+                    self._emit(f"    mvi b,{self._fmt_imm(row_width)}")
+                    self._emit("    mvi d,0")
+                    mul_loop = self._new_label("print_string_row_mul")
+                    self._emit(f"@{mul_loop}")
+                    self._emit("    mov a,d")
+                    self._emit("    add a,c")
+                    self._emit("    mov d,a")
+                    self._emit("    dcr b")
+                    self._emit(f"    jre {mul_loop}")
+                    self._emit("    mov a,d")
+
+                self._emit(f"    lxi hl,{label}")
+                self._emit("    add l,a")
+                self._emit("    aci h,0")
+                emit_hl_to_de()
+                return True
+
+            inline_values: Optional[List[int]] = None
+
+            if isinstance(args[2], c_ast.Constant) and args[2].type == "string":
+                raw = args[2].value
+                if len(raw) < 2 or raw[0] != '"' or raw[-1] != '"':
+                    coord = getattr(args[2], "coord", "unknown")
+                    raise ConversionError(f"Unsupported string literal {raw} at {coord}")
+
+                decoded = bytes(raw[1:-1], "utf-8").decode("unicode_escape")
+                inline_values = [ord(ch) & 0xFF for ch in decoded]
+            elif isinstance(args[2], c_ast.ID):
+                rom_alias = self._resolve_rom_array_alias(args[2].name)
+                if rom_alias is not None:
+                    values = self.rom_array_values[rom_alias]
+                    inline_values = []
+                    for v in values:
+                        if v == 0:
+                            break
+                        inline_values.append(v & 0xFF)
+                        if len(inline_values) >= 0x20:
+                            break
+
+            if inline_values is not None:
+                self._emit_expr_to_a(args[0])
+                src_slot_x = self._alloc_symbol("scv_api__arg_0")
+                self._emit(f"    mov ({src_slot_x}),a")
+
+                self._emit_expr_to_a(args[1])
+                src_slot_y = self._alloc_symbol("scv_api__arg_1")
+                self._emit(f"    mov ({src_slot_y}),a")
+
+            else:
+                self._emit_expr_to_a(args[0])
+                src_slot_x = self._alloc_symbol(self._arg_symbol_name(callee, "x"))
+                self._emit(f"    mov ({src_slot_x}),a")
+
+                self._emit_expr_to_a(args[1])
+                src_slot_y = self._alloc_symbol(self._arg_symbol_name(callee, "y"))
+                self._emit(f"    mov ({src_slot_y}),a")
+
+            def emit_inline_chars(values: List[int], src_slot_x: str, src_slot_y: str) -> None:
                 self.extern_functions.add("scv_print_char")
                 dst_slot_x = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "x"))
                 dst_slot_y = self._alloc_symbol(self._arg_symbol_name("scv_print_char", "y"))
@@ -3653,33 +3821,15 @@ class L7801L65Emitter:
 
             # Inline literal strings and ROM-backed const arrays as direct
             # scv_print_char calls. This avoids reliance on volatile DE across
-            # runtime string loops.
-            if isinstance(args[2], c_ast.Constant) and args[2].type == "string":
-                raw = args[2].value
-                if len(raw) < 2 or raw[0] != '"' or raw[-1] != '"':
-                    coord = getattr(args[2], "coord", "unknown")
-                    raise ConversionError(f"Unsupported string literal {raw} at {coord}")
-
-                decoded = bytes(raw[1:-1], "utf-8").decode("unicode_escape")
-                emit_inline_chars([ord(ch) & 0xFF for ch in decoded])
+            # runtime string loops and avoids reserving dedicated print_string
+            # arg bytes in RAM when no runtime helper call is needed.
+            if inline_values is not None:
+                emit_inline_chars(inline_values, src_slot_x, src_slot_y)
                 return
-
-            if isinstance(args[2], c_ast.ID):
-                rom_alias = self._resolve_rom_array_alias(args[2].name)
-                if rom_alias is not None:
-                    values = self.rom_array_values[rom_alias]
-                    inline_values: List[int] = []
-                    for v in values:
-                        if v == 0:
-                            break
-                        inline_values.append(v & 0xFF)
-                        if len(inline_values) >= 0x20:
-                            break
-                    emit_inline_chars(inline_values)
-                    return
 
             rom_label: Optional[str] = None
             ram_label: Optional[str] = None
+            emitted_pointer = False
 
             if isinstance(args[2], c_ast.ID):
                 alias = self._resolve_rom_array_alias(args[2].name)
@@ -3689,14 +3839,18 @@ class L7801L65Emitter:
                     ram_alias = self._resolve_ram_array_alias(args[2].name)
                     if ram_alias is not None:
                         ram_label = self.ram_array_labels[ram_alias]
+            elif isinstance(args[2], c_ast.ArrayRef):
+                emitted_pointer = emit_rom_row_pointer_to_de(args[2])
 
-            if rom_label is None and ram_label is None:
+            if not emitted_pointer and rom_label is None and ram_label is None:
                 coord = getattr(args[2], "coord", "unknown")
                 raise ConversionError(
                     f"scv_print_string third argument must be a ROM or RAM array identifier or string literal at {coord}"
                 )
 
-            if rom_label is not None:
+            if emitted_pointer:
+                pass
+            elif rom_label is not None:
                 self._emit(f"    lxi de,{rom_label}")
             else:
                 self._emit(f"    lxi de,{ram_label}")
