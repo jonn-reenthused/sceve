@@ -105,6 +105,28 @@ extern int strlen(char *str);
 extern int sprintf(char *dst, char *fmt, int value);
 
 /* ----------------------------------------------------------------
+ * Random helpers
+ *
+ * These helpers provide a small SDK-owned pseudo-random generator.
+ *
+ * scv_random_seed(seed):
+ *   Seeds the internal 8-bit PRNG state. If seed is 0, the runtime uses
+ *   a non-zero fallback seed internally so the sequence still advances.
+ *
+ * scv_random_u8():
+ *   Returns the next pseudo-random byte in range 0..255.
+ *
+ * scv_random_range(min_value, max_value):
+ *   Returns a pseudo-random value in the inclusive range
+ *   [min_value, max_value]. If max_value < min_value, returns min_value.
+ *   If the requested range spans the full 0..255 byte range, the helper
+ *   returns scv_random_u8() directly.
+ * ---------------------------------------------------------------- */
+extern void scv_random_seed(int seed);
+extern int scv_random_u8(void);
+extern int scv_random_range(int min_value, int max_value);
+
+/* ----------------------------------------------------------------
  * Graphics tiles / background mapping
  * Background tile IDs are stored in the tilemap at 0x3040+.
  * Effective background pattern = (tile_id & 0x3F).
