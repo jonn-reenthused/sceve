@@ -85,8 +85,6 @@ class L7801L65Emitter:
 
     # Keep these APIs on dedicated arg slots to avoid clobbering during nested/inline flows.
     NON_SHARED_API_ARG_FUNCTIONS: Set[str] = {
-        "scv_print_string",
-        "scv_print_char",
         "sprintf",
         "strlen",
     }
@@ -262,7 +260,6 @@ class L7801L65Emitter:
             "    mvi a,0x00",
             "    mov (sprintf__tmp_hundreds),a",
             "    mov (sprintf__tmp_tens),a",
-            "    mov (sprintf__tmp_started),a",
             "@{fn}_hundreds_loop",
             "    mov a,(sprintf__tmp_rem)",
             "    mvi b,0x64",
@@ -302,10 +299,8 @@ class L7801L65Emitter:
             "    mov a,(sprintf__tmp_count)",
             "    adi a,0x01",
             "    mov (sprintf__tmp_count),a",
-            "    mvi a,0x01",
-            "    mov (sprintf__tmp_started),a",
             "@{fn}_skip_hundreds",
-            "    mov a,(sprintf__tmp_started)",
+            "    mov a,(sprintf__tmp_hundreds)",
             "    eqi a,0",
             "    skz",
             "    jmp {fn}_emit_tens_check",
@@ -360,8 +355,6 @@ class L7801L65Emitter:
             "    mov a,({fn}__arg_min_value)",
             "    mov b,a",
             "    mov a,({fn}__arg_max_value)",
-            "    mov c,a",
-            "    mov a,c",
             "    sub a,b",
             "    skc",
             "    jmp {fn}_check_full_range",
@@ -369,7 +362,7 @@ class L7801L65Emitter:
             "    ret",
             "@{fn}_check_full_range",
             "    adi a,0x01",
-            "    mov ({fn}__tmp_span),a",
+            "    mov c,a",
             "    eqi a,0",
             "    skz",
             "    jmp {fn}_have_span",
@@ -377,24 +370,15 @@ class L7801L65Emitter:
             "    ret",
             "@{fn}_have_span",
             "    call fn_scv_random_u8",
-            "    mov ({fn}__tmp_rand),a",
             "@{fn}_reduce_loop",
-            "    mov a,({fn}__tmp_rand)",
-            "    mov b,a",
-            "    mov a,({fn}__tmp_span)",
-            "    mov c,a",
-            "    mov a,b",
             "    sub a,c",
             "    skc",
-            "    jmp {fn}_apply_subtract",
-            "    mov a,({fn}__tmp_rand)",
+            "    jmp {fn}_reduce_loop",
+            "    add a,c",
             "    mov b,a",
             "    mov a,({fn}__arg_min_value)",
             "    add a,b",
             "    ret",
-            "@{fn}_apply_subtract",
-            "    mov ({fn}__tmp_rand),a",
-            "    jmp {fn}_reduce_loop",
         ],
         "scv_print_char": [
             "    mvi h,0x30",
@@ -411,43 +395,27 @@ class L7801L65Emitter:
             "@{fn}_col_step",
             "    mov a,({fn}__arg_x)",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    mov a,({fn}__arg_ch)",
             "    stax (hl)",
             "    ret",
         ],
         "scv_print_string": [
-            "    mvi a,0x20",
-            "    mov (scv_print_string__tmp_guard),a",
             "@{fn}_loop",
-            "    mov a,(scv_print_string__tmp_guard)",
-            "    eqi a,0",
-            "    skz",
-            "    jmp {fn}_check_char",
-            "    ret",
-            "@{fn}_check_char",
             "    ldax (de)",
-            "    mov b,a",
             "    eqi a,0",
             "    skz",
             "    jmp {fn}_print_char",
             "    ret",
             "@{fn}_print_char",
-            "    mov a,b",
-            "    mov (scv_print_char__arg_ch),a",
-            "    mov a,({fn}__arg_y)",
-            "    mov (scv_print_char__arg_y),a",
-            "    mov a,({fn}__arg_x)",
-            "    mov (scv_print_char__arg_x),a",
+            "    mov (scv_api__arg_2),a",
             "    call fn_scv_print_char",
             "    inx de",
             "    mov a,({fn}__arg_x)",
             "    adi a,0x01",
             "    mov ({fn}__arg_x),a",
-            "    mov a,(scv_print_string__tmp_guard)",
-            "    adi a,0xFF",
-            "    mov (scv_print_string__tmp_guard),a",
             "    jmp {fn}_loop",
         ],
         "scv_draw_tile": [
@@ -465,7 +433,8 @@ class L7801L65Emitter:
             "@{fn}_col_step",
             "    mov a,({fn}__arg_col)",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    mov a,({fn}__arg_tile_id)",
             "    ani a,0x3F",
@@ -487,7 +456,8 @@ class L7801L65Emitter:
             "@{fn}_col_step",
             "    mov a,({fn}__arg_col)",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    mov a,({fn}__arg_tile_id)",
             "    ani a,0x3F",
@@ -509,7 +479,8 @@ class L7801L65Emitter:
             "@{fn}_col_step",
             "    mov a,({fn}__arg_col)",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    ldax (hl)",
             "    ani a,0x3F",
@@ -569,7 +540,8 @@ class L7801L65Emitter:
             "    nei a,0",
             "    jr {fn}_slot_done",
             "    mvi a,0x10",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    dcr b",
             "    jre {fn}_slot_loop",
@@ -606,7 +578,8 @@ class L7801L65Emitter:
             "    nei a,0",
             "    jr {fn}_slot_done",
             "    mvi a,0x20",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    dcr b",
             "    jre {fn}_slot_loop",
@@ -680,7 +653,8 @@ class L7801L65Emitter:
             "@{fn}_addr_col_done",
             "    mov a,b",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    mov a,({fn}__arg_tile_id)",
             "    ani a,0x3F",
@@ -794,7 +768,8 @@ class L7801L65Emitter:
             "@{fn}_col_step",
             "    mov a,({fn}__arg_col)",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    mov a,({fn}__arg_tile_id)",
             "    stax (hl)",
@@ -832,7 +807,8 @@ class L7801L65Emitter:
             "@{fn}_erase_col_step",
             "    mov a,d",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    mvi a,0x20",
             "    stax (hl)",
@@ -864,7 +840,8 @@ class L7801L65Emitter:
             "@{fn}_draw_col_step",
             "    mov a,({fn}__arg_col)",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    mov a,e",
             "    stax (hl)",
@@ -903,7 +880,8 @@ class L7801L65Emitter:
             "@{fn}_erase_col_step",
             "    mov a,d",
             "    adi a,0x03",
-            "    add l,a",
+            "    add a,l",
+            "    mov l,a",
             "    aci h,0",
             "    mvi a,0x20",
             "    stax (hl)",
@@ -2135,6 +2113,7 @@ class L7801L65Emitter:
 
         if "scv_print_string" in self.extern_functions:
             self.extern_functions.add("scv_print_char")
+        if "scv_print_char" in self.extern_functions:
             if "scv_print_char" not in self.function_params:
                 self.function_params["scv_print_char"] = self.SCV_API_PARAMS["scv_print_char"]
         if "scv_random_range" in self.extern_functions:
@@ -2164,12 +2143,8 @@ class L7801L65Emitter:
                 self._alloc_symbol("sprintf__tmp_rem")
                 self._alloc_symbol("sprintf__tmp_hundreds")
                 self._alloc_symbol("sprintf__tmp_tens")
-                self._alloc_symbol("sprintf__tmp_started")
             elif fn == "scv_random_seed" or fn == "scv_random_u8" or fn == "scv_random_range":
                 self._alloc_symbol("scv_random__state")
-                if fn == "scv_random_range":
-                    self._alloc_symbol("scv_random_range__tmp_span")
-                    self._alloc_symbol("scv_random_range__tmp_rand")
 
             self._emit(f"@fn_{fn}")
             asset_fn = self.asset_functions.get(fn)
@@ -2569,6 +2544,11 @@ class L7801L65Emitter:
 
     def _emit(self, line: str = "") -> None:
         self.lines.append(line)
+
+    def _emit_add_a_to_hl(self) -> None:
+        self._emit("    add a,l")
+        self._emit("    mov l,a")
+        self._emit("    aci h,0")
 
     def _unsupported(self, node: c_ast.Node, message: str) -> None:
         if self.strict:
@@ -3734,14 +3714,27 @@ class L7801L65Emitter:
                     self._emit(f"    lxi hl,{label}")
                     if row_offset != 0:
                         self._emit(f"    mvi a,{self._fmt_imm(row_offset & 0xFF)}")
-                        self._emit("    add l,a")
-                        self._emit("    aci h,0")
+                        self._emit_add_a_to_hl()
                     emit_hl_to_de()
                     return True
 
                 self._emit_expr_to_a(row_expr.subscript)
                 if row_width == 1:
                     pass
+                elif row_width == 10:
+                    self._emit("    mov b,a")
+                    self._emit("    add a,a")
+                    self._emit("    add a,a")
+                    self._emit("    add a,a")
+                    self._emit("    mov c,a")
+                    self._emit("    mov a,b")
+                    self._emit("    add a,a")
+                    self._emit("    add a,c")
+                elif row_width == 16:
+                    self._emit("    add a,a")
+                    self._emit("    add a,a")
+                    self._emit("    add a,a")
+                    self._emit("    add a,a")
                 else:
                     self._emit("    mov c,a")
                     self._emit(f"    mvi b,{self._fmt_imm(row_width)}")
@@ -3756,8 +3749,7 @@ class L7801L65Emitter:
                     self._emit("    mov a,d")
 
                 self._emit(f"    lxi hl,{label}")
-                self._emit("    add l,a")
-                self._emit("    aci h,0")
+                self._emit_add_a_to_hl()
                 emit_hl_to_de()
                 return True
 
@@ -3860,7 +3852,6 @@ class L7801L65Emitter:
                 params = self.SCV_API_PARAMS[callee]
                 self.function_params[callee] = params
             self.extern_functions.add(callee)
-            self._alloc_symbol("scv_print_string__tmp_guard")
 
             self._emit(f"    call fn_{callee}")
             return
@@ -4139,66 +4130,78 @@ class L7801L65Emitter:
             # Evaluate outer index
             self._emit_expr_to_a(outer_expr.subscript)
             self._emit("    mov b,a")  # b = outer index
-            
-            # Multiply outer index by row width
-            # For common row widths, use efficient shifts or add sequences
+
+            # Multiply outer index by row width; result ends up in a.
             if row_width == 1:
                 self._emit("    mov a,b")
             elif row_width == 2:
                 self._emit("    mov a,b")
-                self._emit("    add a,a")  # a *= 2 (left shift)
+                self._emit("    add a,a")  # a *= 2
             elif row_width == 4:
                 self._emit("    mov a,b")
                 self._emit("    add a,a")  # a *= 2
                 self._emit("    add a,a")  # a *= 4
             elif row_width == 8:
                 self._emit("    mov a,b")
-                self._emit("    add a,a")  # a *= 8 (three shifts)
+                self._emit("    add a,a")  # a *= 2
+                self._emit("    add a,a")  # a *= 4
+                self._emit("    add a,a")  # a *= 8
+            elif row_width == 10:
+                self._emit("    mov a,b")
+                self._emit("    add a,a")
+                self._emit("    add a,a")
+                self._emit("    add a,a")
+                self._emit("    mov c,a")
+                self._emit("    mov a,b")
+                self._emit("    add a,a")
+                self._emit("    add a,c")
+            elif row_width == 16:
+                self._emit("    mov a,b")
+                self._emit("    add a,a")
+                self._emit("    add a,a")
                 self._emit("    add a,a")
                 self._emit("    add a,a")
             else:
-                # General case: load row_width and multiply using d as accumulator
-                self._emit("    mov c,a")  # c = index (multiplier)
+                # General case: loop accumulates in d, result moved to a at the end.
+                self._emit("    mov c,a")  # c = outer index
                 self._emit(f"    mvi b,{self._fmt_imm(row_width)}")  # b = row_width (counter)
                 self._emit("    mvi d,0")  # d = accumulator
                 mul_loop = self._new_label("mul_loop")
                 self._emit(f"@{mul_loop}")
-                self._emit("    mov a,d")  # a = accumulator
-                self._emit("    add a,c")  # a += index
-                self._emit("    mov d,a")  # d = new accumulator
-                self._emit("    dcr b")  # b--
-                self._emit(f"    jre {mul_loop}")  # jump if b != 0
-            
-            self._emit("    mov a,d")  # a = result from d
-            self._emit("    mov b,a")  # b = outer_idx * row_width
-            
+                self._emit("    mov a,d")
+                self._emit("    add a,c")
+                self._emit("    mov d,a")
+                self._emit("    dcr b")
+                self._emit(f"    jre {mul_loop}")
+                self._emit("    mov a,d")  # a = outer_idx * row_width
+
             # Add inner index
             const_inner_idx: Optional[int] = None
             try:
                 const_inner_idx = self._eval_const_u8(inner_subscript)
             except ConversionError:
                 const_inner_idx = None
-            
+
             if const_inner_idx is not None:
-                # Inner index is constant
-                self._emit(f"    lxi hl,{label}")
-                self._emit("    mov a,b")
+                # Inner index is constant — result of multiply is still in a.
                 if const_inner_idx != 0:
-                    self._emit(f"    mvi c,{self._fmt_imm(const_inner_idx)}")
-                    self._emit("    add a,c")
-                self._emit("    add l,a")
-                self._emit("    aci h,0")
+                    self._emit(f"    adi a,{self._fmt_imm(const_inner_idx)}")
+                self._emit(f"    lxi hl,{label}")
+                self._emit_add_a_to_hl()
                 self._emit("    ldax (hl)")
                 return
             else:
-                # Both indices are runtime - compute total offset
+                # Both indices are runtime.
+                # Stash outer_idx * row_width in a RAM temp before calling _emit_expr_to_a,
+                # because that call may clobber registers b/c/d.
+                row_tmp = self._alloc_temp_symbol("arith__2d_row_offset")
+                self._emit(f"    mov ({row_tmp}),a")
                 self._emit_expr_to_a(inner_subscript)
                 self._emit("    mov c,a")  # c = inner index
-                self._emit("    mov a,b")  # a = outer_idx * row_width
+                self._emit(f"    mov a,({row_tmp})")  # a = outer_idx * row_width
                 self._emit("    add a,c")  # a = total offset
                 self._emit(f"    lxi hl,{label}")
-                self._emit("    add l,a")
-                self._emit("    aci h,0")
+                self._emit_add_a_to_hl()
                 self._emit("    ldax (hl)")
                 return
         
@@ -4241,8 +4244,7 @@ class L7801L65Emitter:
             self._emit(f"    lxi hl,{label}")
             if const_idx != 0:
                 self._emit(f"    mvi a,{self._fmt_imm(const_idx)}")
-                self._emit("    add l,a")
-                self._emit("    aci h,0")
+                self._emit_add_a_to_hl()
             self._emit("    ldax (hl)")
             return
 
@@ -4251,8 +4253,7 @@ class L7801L65Emitter:
         self._emit("    mov b,a")
         self._emit(f"    lxi hl,{label}")
         self._emit("    mov a,b")
-        self._emit("    add l,a")
-        self._emit("    aci h,0")
+        self._emit_add_a_to_hl()
         self._emit("    ldax (hl)")
 
     def _emit_struct_field_to_a(self, struct_ref: c_ast.StructRef) -> None:
@@ -4323,8 +4324,7 @@ class L7801L65Emitter:
             if field_offset != 0:
                 self._emit(f"    mvi c,{self._fmt_imm(field_offset)}")
                 self._emit("    add a,c")  # a += field_offset
-            self._emit("    add l,a")
-            self._emit("    aci h,0")
+            self._emit_add_a_to_hl()
             self._emit("    ldax (hl)")
             return
         
@@ -4369,8 +4369,7 @@ class L7801L65Emitter:
             self._emit(f"    lxi hl,{array_base}")
             if const_idx != 0:
                 self._emit(f"    mvi a,{self._fmt_imm(const_idx)}")
-                self._emit("    add l,a")
-                self._emit("    aci h,0")
+                self._emit_add_a_to_hl()
             self._emit("    mov a,c")
             self._emit("    stax (hl)")
             return
@@ -4379,8 +4378,7 @@ class L7801L65Emitter:
         self._emit("    mov b,a")
         self._emit(f"    lxi hl,{array_base}")
         self._emit("    mov a,b")
-        self._emit("    add l,a")
-        self._emit("    aci h,0")
+        self._emit_add_a_to_hl()
         self._emit("    mov a,c")
         self._emit("    stax (hl)")
 
@@ -4452,8 +4450,7 @@ class L7801L65Emitter:
         self._emit(f"    mvi a,{self._fmt_imm(field_offset)}")
         self._emit("    add a,b")  # a = field_offset + index_offset
         self._emit(f"    lxi hl,{array_base}")
-        self._emit("    add l,a")
-        self._emit("    aci h,0")
+        self._emit_add_a_to_hl()
         
         # Restore value and store
         if value_register == "a":
@@ -4565,8 +4562,7 @@ class L7801L65Emitter:
             self._emit(f"    lxi hl,{label}")
             if const_idx != 0:
                 self._emit(f"    mvi a,{self._fmt_imm(const_idx)}")
-                self._emit("    add l,a")
-                self._emit("    aci h,0")
+                self._emit_add_a_to_hl()
             self._emit("    ldax (hl)")
             return
 
@@ -4574,8 +4570,7 @@ class L7801L65Emitter:
         self._emit("    mov b,a")
         self._emit(f"    lxi hl,{label}")
         self._emit("    mov a,b")
-        self._emit("    add l,a")
-        self._emit("    aci h,0")
+        self._emit_add_a_to_hl()
         self._emit("    ldax (hl)")
 
     def _emit_binary(self, binary: c_ast.BinaryOp) -> None:
