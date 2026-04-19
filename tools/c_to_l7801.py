@@ -13,6 +13,7 @@ It should still be fine
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -77,6 +78,20 @@ class L7801L65Emitter:
     STACK_INIT = 0xFFF0
     DEFAULT_RAM_BASE = 0xFFA0
     RECLAIMED_RAM_BASE = 0xFF80
+    CART_PROFILES: Dict[str, Dict[str, object]] = {
+        "flat32": {"bank_count": 1, "layout": "flat", "supports_bank_switch": False, "hook_backend": "flat32-fixed"},
+        "banked64": {"bank_count": 2, "layout": "monolithic", "supports_bank_switch": True, "hook_backend": "banked64-shadow-v1"},
+        "banked128": {"bank_count": 4, "layout": "monolithic", "supports_bank_switch": True, "hook_backend": "banked128-shadow-v1"},
+        "split32_8": {"bank_count": 2, "layout": "split", "supports_bank_switch": True, "hook_backend": "split32_8-shadow-v1"},
+        "split32_32": {"bank_count": 2, "layout": "split", "supports_bank_switch": True, "hook_backend": "split32_32-shadow-v1"},
+    }
+    CART_BANK_SIZES: Dict[str, List[int]] = {
+        "flat32": [0x8000],
+        "banked64": [0x8000, 0x8000],
+        "banked128": [0x8000, 0x8000, 0x8000, 0x8000],
+        "split32_8": [0x8000, 0x2000],
+        "split32_32": [0x8000, 0x8000],
+    }
     SOFTWARE_SPRITE_APIS: Set[str] = {
         "scv_set_sprite",
         "scv_move_sprite",
@@ -106,6 +121,8 @@ class L7801L65Emitter:
         "scv_random_seed": ["seed"],
         "scv_random_u8": [],
         "scv_random_range": ["min_value", "max_value"],
+        "scv_cart_select_bank": ["bank_id"],
+        "scv_cart_restore_bank": [],
         "scv_print_char": ["x", "y", "ch"],
         "scv_print_string": ["x", "y"],
         "scv_draw_tile": ["row", "col", "tile_id"],
@@ -121,6 +138,12 @@ class L7801L65Emitter:
         "scv_scroll_bg_left": [],
         "scv_scroll_bg_down": [],
         "scv_scroll_bg_up": [],
+        "scv_patch_bg_column_right": ["row_start", "row_count", "src_array"],
+        "scv_patch_bg_column_left": ["row_start", "row_count", "src_array"],
+        "scv_patch_bg_row_top": ["col_start", "col_count", "src_array"],
+        "scv_patch_bg_row_bottom": ["col_start", "col_count", "src_array"],
+        "scv_map_extract_column": ["dst_array", "src_map", "map_width", "map_x", "map_y", "count"],
+        "scv_map_extract_row": ["dst_array", "src_map", "map_width", "map_x", "map_y", "count"],
         "scv_set_sprite": ["id", "col", "row", "tile_id"],
         "scv_move_sprite": ["id", "col", "row"],
         "scv_hide_sprite": ["id"],
@@ -325,6 +348,18 @@ class L7801L65Emitter:
             "    adi a,0x01",
             "    mov (sprintf__tmp_count),a",
             "    jmp {fn}_loop",
+        ],
+        "scv_cart_select_bank": [
+            "    mov a,(scv_cart__current_bank)",
+            "    mov (scv_cart__saved_bank),a",
+            "    mov a,({fn}__arg_bank_id)",
+            "    mov (scv_cart__current_bank),a",
+            "    ret",
+        ],
+        "scv_cart_restore_bank": [
+            "    mov a,(scv_cart__saved_bank)",
+            "    mov (scv_cart__current_bank),a",
+            "    ret",
         ],
         "scv_random_seed": [
             "    mov a,({fn}__arg_seed)",
@@ -737,6 +772,183 @@ class L7801L65Emitter:
             "    jre {fn}_row",
             "    ret",
         ],
+        "scv_patch_bg_column_right": [
+            "    mvi h,0x30",
+            "    mvi l,0x40",
+            "    mov a,({fn}__arg_row_start)",
+            "    mov b,a",
+            "@{fn}_row_addr",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_row_addr_done",
+            "    adi l,0x20",
+            "    aci h,0",
+            "    dcr b",
+            "    jre {fn}_row_addr",
+            "@{fn}_row_addr_done",
+            "    mvi a,0x1F",
+            "    add a,l",
+            "    mov l,a",
+            "    aci h,0",
+            "    mov b,({fn}__arg_row_count)",
+            "@{fn}_copy_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_done",
+            "    ldax (de)",
+            "    ani a,0x3F",
+            "    stax (hl)",
+            "    inx de",
+            "    adi l,0x20",
+            "    aci h,0",
+            "    dcr b",
+            "    jre {fn}_copy_loop",
+            "@{fn}_done",
+            "    ret",
+        ],
+        "scv_patch_bg_column_left": [
+            "    mvi h,0x30",
+            "    mvi l,0x40",
+            "    mov a,({fn}__arg_row_start)",
+            "    mov b,a",
+            "@{fn}_row_addr",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_row_addr_done",
+            "    adi l,0x20",
+            "    aci h,0",
+            "    dcr b",
+            "    jre {fn}_row_addr",
+            "@{fn}_row_addr_done",
+            "    mov b,({fn}__arg_row_count)",
+            "@{fn}_copy_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_done",
+            "    ldax (de)",
+            "    ani a,0x3F",
+            "    stax (hl)",
+            "    inx de",
+            "    adi l,0x20",
+            "    aci h,0",
+            "    dcr b",
+            "    jre {fn}_copy_loop",
+            "@{fn}_done",
+            "    ret",
+        ],
+        "scv_patch_bg_row_top": [
+            "    mvi h,0x30",
+            "    mvi l,0x40",
+            "    mov a,({fn}__arg_col_start)",
+            "    add a,l",
+            "    mov l,a",
+            "    aci h,0",
+            "    mov b,({fn}__arg_col_count)",
+            "@{fn}_copy_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_done",
+            "    ldax (de)",
+            "    ani a,0x3F",
+            "    stax (hl)",
+            "    inx de",
+            "    inx hl",
+            "    dcr b",
+            "    jre {fn}_copy_loop",
+            "@{fn}_done",
+            "    ret",
+        ],
+        "scv_patch_bg_row_bottom": [
+            "    mvi h,0x31",
+            "    mvi l,0xA0",
+            "    mov a,({fn}__arg_col_start)",
+            "    add a,l",
+            "    mov l,a",
+            "    aci h,0",
+            "    mov b,({fn}__arg_col_count)",
+            "@{fn}_copy_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_done",
+            "    ldax (de)",
+            "    ani a,0x3F",
+            "    stax (hl)",
+            "    inx de",
+            "    inx hl",
+            "    dcr b",
+            "    jre {fn}_copy_loop",
+            "@{fn}_done",
+            "    ret",
+        ],
+        "scv_map_extract_column": [
+            "    mov a,({fn}__arg_map_y)",
+            "    mov b,a",
+            "@{fn}_seek_row",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_seek_row_done",
+            "    mov a,({fn}__arg_map_width)",
+            "    add a,e",
+            "    mov e,a",
+            "    aci d,0",
+            "    dcr b",
+            "    jre {fn}_seek_row",
+            "@{fn}_seek_row_done",
+            "    mov a,({fn}__arg_map_x)",
+            "    add a,e",
+            "    mov e,a",
+            "    aci d,0",
+            "    mov b,({fn}__arg_count)",
+            "@{fn}_copy_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_done",
+            "    ldax (de)",
+            "    ani a,0x3F",
+            "    stax (hl)",
+            "    inx hl",
+            "    mov a,({fn}__arg_map_width)",
+            "    add a,e",
+            "    mov e,a",
+            "    aci d,0",
+            "    dcr b",
+            "    jre {fn}_copy_loop",
+            "@{fn}_done",
+            "    ret",
+        ],
+        "scv_map_extract_row": [
+            "    mov a,({fn}__arg_map_y)",
+            "    mov b,a",
+            "@{fn}_seek_row",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_seek_row_done",
+            "    mov a,({fn}__arg_map_width)",
+            "    add a,e",
+            "    mov e,a",
+            "    aci d,0",
+            "    dcr b",
+            "    jre {fn}_seek_row",
+            "@{fn}_seek_row_done",
+            "    mov a,({fn}__arg_map_x)",
+            "    add a,e",
+            "    mov e,a",
+            "    aci d,0",
+            "    mov b,({fn}__arg_count)",
+            "@{fn}_copy_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_done",
+            "    ldax (de)",
+            "    ani a,0x3F",
+            "    stax (hl)",
+            "    inx de",
+            "    inx hl",
+            "    dcr b",
+            "    jre {fn}_copy_loop",
+            "@{fn}_done",
+            "    ret",
+        ],
         "scv_set_sprite": [
             "    mov a,({fn}__arg_id)",
             "    add a,a",
@@ -999,9 +1211,7 @@ class L7801L65Emitter:
             "    inx hl",
             "    inx hl",
             "    mov a,({fn}__arg_pattern)",
-            "    ani a,0x3F",
-            "    mvi b,0x40",
-            "    ora a,b",
+            "    ani a,0x7F",
             "    stax (hl)",
             "    ret",
         ],
@@ -1031,9 +1241,7 @@ class L7801L65Emitter:
             "    add a,b",
             "    mov c,a",
             "    mov a,c",
-            "    ani a,0x3F",
-            "    mvi b,0x40",
-            "    ora a,b",
+            "    ani a,0x7F",
             "    mov c,a",
             "    mov a,({fn}__arg_id)",
             "    add a,a",
@@ -1923,6 +2131,13 @@ class L7801L65Emitter:
         self.struct_field_offsets: Dict[str, Dict[str, int]] = {}  # Track field offsets within structs
         self.struct_instances: Dict[str, Dict[str, str]] = {}
         self.expr_tmp_depth = 0
+        self.cart_profile = "flat32"
+        self.pending_function_bank: Optional[int] = None
+        self.function_bank_hints: Dict[str, int] = {}
+        self.rom_bank_hints: Dict[str, int] = {}
+        self.function_wrapper_labels: Dict[str, str] = {}
+        self.function_body_labels: Dict[str, str] = {}
+        self.function_end_labels: Dict[str, str] = {}
 
     def convert(self, source: str, source_path: Optional[Path] = None) -> str:
         self.source_path = source_path
@@ -1962,6 +2177,13 @@ class L7801L65Emitter:
         self.struct_field_offsets = {}
         self.struct_instances = {}
         self.expr_tmp_depth = 0
+        self.cart_profile = "flat32"
+        self.pending_function_bank = None
+        self.function_bank_hints = {}
+        self.rom_bank_hints = {}
+        self.function_wrapper_labels = {}
+        self.function_body_labels = {}
+        self.function_end_labels = {}
         self.function_params = {}
         self.signed_param_names_by_function = {}
         self.defined_functions = set()
@@ -1986,6 +2208,7 @@ class L7801L65Emitter:
                 self._declare_global(ext)
 
         self._collect_function_signatures(ast)
+        self._validate_cart_metadata_targets()
         self._collect_function_calls(ast)
         self._register_asset_function_signatures()
 
@@ -2143,6 +2366,9 @@ class L7801L65Emitter:
                 self._alloc_symbol("sprintf__tmp_rem")
                 self._alloc_symbol("sprintf__tmp_hundreds")
                 self._alloc_symbol("sprintf__tmp_tens")
+            elif fn == "scv_cart_select_bank" or fn == "scv_cart_restore_bank":
+                for symbol_name in self._get_cart_runtime_symbols():
+                    self._alloc_symbol(symbol_name)
             elif fn == "scv_random_seed" or fn == "scv_random_u8" or fn == "scv_random_range":
                 self._alloc_symbol("scv_random__state")
 
@@ -2150,7 +2376,9 @@ class L7801L65Emitter:
             asset_fn = self.asset_functions.get(fn)
             bulk_asset_frames = self.asset_bulk_functions.get(fn)
             sound_asset = next((s for s in self.sound_assets if s.play_fn == fn), None)
-            if asset_fn is not None:
+            if fn == "scv_cart_select_bank" or fn == "scv_cart_restore_bank":
+                impl = self._build_cart_hook_impl(fn)
+            elif asset_fn is not None:
                 impl = self._build_asset_loader_impl(asset_fn)
             elif bulk_asset_frames is not None:
                 impl = self._build_asset_bulk_loader_impl(fn, bulk_asset_frames)
@@ -2233,7 +2461,8 @@ class L7801L65Emitter:
             "    nei a,0",
             f"    jr {function_name}_slot_done",
             f"    mvi a,{byte_count_imm}",
-            "    add e,a",
+            "    add a,e",
+            "    mov e,a",
             "    aci d,0",
             "    dcr b",
             f"    jre {function_name}_slot_loop",
@@ -2350,12 +2579,22 @@ class L7801L65Emitter:
         filtered: List[str] = []
         for line in source.splitlines():
             stripped = line.strip()
+            self._maybe_bind_pending_function_bank(stripped)
             if stripped.startswith("#"):
                 if stripped.startswith("#pragma scv_asset sound"):
                     self._parse_sound_directive(stripped)
                     continue
                 if stripped.startswith("#pragma scv_asset"):
                     self._parse_asset_directive(stripped)
+                    continue
+                if stripped.startswith("#pragma scv_cart_profile"):
+                    self._parse_cart_profile_directive(stripped)
+                    continue
+                if stripped.startswith("#pragma scv_bank_data"):
+                    self._parse_bank_data_directive(stripped)
+                    continue
+                if stripped.startswith("#pragma scv_bank"):
+                    self._parse_bank_function_directive(stripped)
                     continue
                 if stripped.startswith("#include"):
                     include_match = re.fullmatch(r'#include\s+"([^"]+)"', stripped)
@@ -2400,6 +2639,245 @@ class L7801L65Emitter:
             filtered.append(line)
 
         return "\n".join(filtered)
+
+    def _parse_bank_id(self, raw_bank: str, directive_name: str) -> int:
+        try:
+            bank_id = int(raw_bank, 0)
+        except ValueError as exc:
+            raise ConversionError(f"Invalid {directive_name} bank id: {raw_bank}") from exc
+        if bank_id < 0:
+            raise ConversionError(f"Invalid {directive_name} bank id: {raw_bank}")
+        return bank_id
+
+    def _parse_cart_profile_directive(self, line: str) -> None:
+        match = re.fullmatch(r"#pragma\s+scv_cart_profile\s+([A-Za-z0-9_]+)\s*", line)
+        if not match:
+            raise ConversionError(f"Invalid SCV cart profile directive: {line}")
+        profile = match.group(1)
+        if profile not in self.CART_PROFILES:
+            supported = ", ".join(sorted(self.CART_PROFILES))
+            raise ConversionError(
+                f"Unsupported SCV cart profile '{profile}'. Supported profiles: {supported}"
+            )
+        self.cart_profile = profile
+
+    def _parse_bank_function_directive(self, line: str) -> None:
+        match = re.fullmatch(r"#pragma\s+scv_bank\s+([^\s]+)\s*", line)
+        if not match:
+            raise ConversionError(f"Invalid SCV bank directive: {line}")
+        self.pending_function_bank = self._parse_bank_id(match.group(1), "scv_bank")
+
+    def _parse_bank_data_directive(self, line: str) -> None:
+        match = re.fullmatch(
+            r"#pragma\s+scv_bank_data(?:\(([^\)]+)\)|\s+([^\s]+))\s+([A-Za-z_][A-Za-z0-9_]*)\s*",
+            line,
+        )
+        if not match:
+            raise ConversionError(f"Invalid SCV bank data directive: {line}")
+        raw_bank = match.group(1) or match.group(2)
+        name = match.group(3)
+        self.rom_bank_hints[name] = self._parse_bank_id(raw_bank, "scv_bank_data")
+
+    def _maybe_bind_pending_function_bank(self, stripped_line: str) -> None:
+        if self.pending_function_bank is None:
+            return
+        if not stripped_line or stripped_line.startswith("#"):
+            return
+        if stripped_line in {"{", "}"}:
+            return
+
+        match = re.fullmatch(
+            r"(?:[A-Za-z_][A-Za-z0-9_\s\*]*\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\([^;=]*\)\s*(?:\{|)$",
+            stripped_line,
+        )
+        if not match or stripped_line.endswith(";"):
+            return
+
+        fn_name = match.group(1)
+        if fn_name in {"if", "while", "return", "switch", "for"}:
+            return
+
+        self.function_bank_hints[fn_name] = self.pending_function_bank
+        self.pending_function_bank = None
+
+    def _validate_bank_assignment(self, bank_id: int, target_name: str) -> None:
+        bank_count = int(self.CART_PROFILES[self.cart_profile]["bank_count"])
+        if bank_id >= bank_count:
+            raise ConversionError(
+                f"Bank assignment {bank_id} for '{target_name}' exceeds cart profile '{self.cart_profile}' capacity ({bank_count} banks)"
+            )
+
+    def _validate_cart_metadata_targets(self) -> None:
+        for fn_name, bank_id in self.function_bank_hints.items():
+            if fn_name not in self.defined_functions:
+                raise ConversionError(
+                    f"SCV bank directive references unknown function '{fn_name}'"
+                )
+            self._validate_bank_assignment(bank_id, fn_name)
+
+        for alias_name, bank_id in self.rom_bank_hints.items():
+            if alias_name not in self.rom_array_labels:
+                raise ConversionError(
+                    f"SCV bank data directive references unknown ROM array '{alias_name}'"
+                )
+            self._validate_bank_assignment(bank_id, alias_name)
+
+    def has_cart_metadata(self) -> bool:
+        return (
+            self.cart_profile != "flat32"
+            or bool(self.function_bank_hints)
+            or bool(self.rom_bank_hints)
+        )
+
+    def get_function_bank(self, fn_name: str) -> int:
+        return self.function_bank_hints.get(fn_name, 0)
+
+    def get_banked_call_edges(self) -> List[Dict[str, object]]:
+        edges: List[Dict[str, object]] = []
+        for caller in sorted(self.function_calls):
+            caller_bank = self.get_function_bank(caller)
+            for callee in sorted(self.function_calls[caller]):
+                if callee not in self.defined_functions:
+                    continue
+                callee_bank = self.get_function_bank(callee)
+                if caller_bank == 0 and callee_bank == 0:
+                    continue
+                edges.append(
+                    {
+                        "caller": caller,
+                        "caller_bank": caller_bank,
+                        "callee": callee,
+                        "callee_bank": callee_bank,
+                    }
+                )
+        return edges
+
+    def get_function_trampolines(self) -> List[Dict[str, object]]:
+        trampolines: List[Dict[str, object]] = []
+        for fn_name in sorted(self.function_bank_hints):
+            bank_id = self.function_bank_hints[fn_name]
+            if bank_id == 0:
+                continue
+            trampolines.append(
+                {
+                    "function": fn_name,
+                    "bank": bank_id,
+                    "wrapper_label": self.function_wrapper_labels.get(fn_name, f"fn_{fn_name}"),
+                    "body_label": self.function_body_labels.get(fn_name, f"fn_{fn_name}__bank_body"),
+                    "end_label": self.function_end_labels.get(fn_name, f"fn_{fn_name}_end"),
+                    "hook_backend": self.get_cart_hook_backend_name(),
+                }
+            )
+        return trampolines
+
+    def get_trampoline_call_edges(self) -> List[Dict[str, object]]:
+        return [
+            edge
+            for edge in self.get_banked_call_edges()
+            if edge["caller_bank"] == 0 and edge["callee_bank"] != 0
+        ]
+
+    def get_illegal_banked_call_edges(self) -> List[Dict[str, object]]:
+        return [
+            edge
+            for edge in self.get_banked_call_edges()
+            if edge["caller_bank"] != 0
+        ]
+
+    def get_cart_hook_backend_name(self) -> str:
+        return str(self.CART_PROFILES[self.cart_profile]["hook_backend"])
+
+    def get_cart_metadata(self) -> Dict[str, object]:
+        profile_info = self.CART_PROFILES[self.cart_profile]
+        return {
+            "version": 1,
+            "profile": self.cart_profile,
+            "bank_count": int(profile_info["bank_count"]),
+            "layout": str(profile_info["layout"]),
+            "supports_bank_switch": bool(profile_info["supports_bank_switch"]),
+            "hook_backend": self.get_cart_hook_backend_name(),
+            "status": "metadata-only",
+            "notes": [
+                "Code generation remains flat ROM; bank assignments are emitted as planning metadata only.",
+                "Executable bank packaging is still incomplete; emitted trampolines describe the intended call ABI.",
+            ],
+            "functions": [
+                {"name": fn_name, "bank": self.function_bank_hints.get(fn_name, 0)}
+                for fn_name in sorted(self.defined_functions)
+            ],
+            "rom_data": [
+                {
+                    "name": alias_name,
+                    "bank": self.rom_bank_hints.get(alias_name, 0),
+                    "size": self.rom_array_lengths[alias_name],
+                }
+                for alias_name in sorted(self.rom_array_labels)
+            ],
+            "explicit_function_banks": dict(sorted(self.function_bank_hints.items())),
+            "explicit_rom_banks": dict(sorted(self.rom_bank_hints.items())),
+            "trampolines": self.get_function_trampolines(),
+            "trampoline_call_edges": self.get_trampoline_call_edges(),
+            "illegal_banked_call_edges": self.get_illegal_banked_call_edges(),
+            "banked_call_edges": self.get_banked_call_edges(),
+        }
+
+    def get_cart_bank_sizes(self) -> List[int]:
+        return list(self.CART_BANK_SIZES[self.cart_profile])
+
+    def _get_cart_backend_shadow_symbol(self) -> Optional[str]:
+        if self.cart_profile == "flat32":
+            return None
+        return f"scv_cart__{self.cart_profile}_shadow_bank"
+
+    def _get_cart_runtime_symbols(self) -> List[str]:
+        symbols = ["scv_cart__current_bank", "scv_cart__saved_bank"]
+        shadow_symbol = self._get_cart_backend_shadow_symbol()
+        if shadow_symbol is not None:
+            symbols.append(shadow_symbol)
+        return symbols
+
+    def _build_cart_hook_impl(self, fn_name: str) -> List[str]:
+        backend_name = self.get_cart_hook_backend_name()
+        bank_count = int(self.CART_PROFILES[self.cart_profile]["bank_count"])
+        shadow_symbol = self._get_cart_backend_shadow_symbol()
+        bank_mask = self._fmt_imm((bank_count - 1) & 0xFF)
+
+        if backend_name == "flat32-fixed":
+            if fn_name == "scv_cart_select_bank":
+                return [
+                    "    mvi a,0x00",
+                    "    mov (scv_cart__saved_bank),a",
+                    "    mov (scv_cart__current_bank),a",
+                    "    ret",
+                ]
+            return [
+                "    mvi a,0x00",
+                "    mov (scv_cart__current_bank),a",
+                "    ret",
+            ]
+
+        if shadow_symbol is None:
+            raise ConversionError(f"Cart hook backend '{backend_name}' requires a shadow bank symbol")
+
+        if fn_name == "scv_cart_select_bank":
+            return [
+                f"    -- cart hook backend: {backend_name}",
+                "    mov a,(scv_cart__current_bank)",
+                "    mov (scv_cart__saved_bank),a",
+                "    mov a,({fn}__arg_bank_id)",
+                f"    ani a,{bank_mask}",
+                f"    mov ({shadow_symbol}),a",
+                "    mov (scv_cart__current_bank),a",
+                "    ret",
+            ]
+
+        return [
+            f"    -- cart hook backend: {backend_name}",
+            "    mov a,(scv_cart__saved_bank)",
+            f"    mov ({shadow_symbol}),a",
+            "    mov (scv_cart__current_bank),a",
+            "    ret",
+        ]
 
     def _parse_sound_directive(self, line: str) -> None:
         # #pragma scv_asset sound tone name p0 p1 p2 p3
@@ -3337,7 +3815,12 @@ class L7801L65Emitter:
     def _emit_function(self, func: c_ast.FuncDef) -> None:
         fn_name = func.decl.name
         fn = f"fn_{fn_name}"
+        fn_bank = self.get_function_bank(fn_name)
+        body_label = fn if fn_bank == 0 else f"{fn}__bank_body"
         end_label = self._new_label(f"{fn}_end")
+        self.function_wrapper_labels[fn_name] = fn
+        self.function_body_labels[fn_name] = body_label
+        self.function_end_labels[fn_name] = end_label
         param_symbols: Dict[str, str] = {}
         for param_name in self.function_params.get(fn_name, []):
             slot = self._alloc_symbol(self._arg_symbol_name(fn_name, param_name))
@@ -3351,7 +3834,25 @@ class L7801L65Emitter:
             param_symbols=param_symbols,
         )
 
-        self._emit(f"@{fn}")
+        if fn_bank != 0:
+            self.extern_functions.add("scv_cart_select_bank")
+            self.extern_functions.add("scv_cart_restore_bank")
+            if "scv_cart_select_bank" not in self.function_params:
+                self.function_params["scv_cart_select_bank"] = self.SCV_API_PARAMS["scv_cart_select_bank"]
+            if "scv_cart_restore_bank" not in self.function_params:
+                self.function_params["scv_cart_restore_bank"] = self.SCV_API_PARAMS["scv_cart_restore_bank"]
+
+            bank_slot = self._alloc_symbol(self._arg_symbol_name("scv_cart_select_bank", "bank_id"))
+            self._emit(f"@{fn}")
+            self._emit(f"    mvi a,{self._fmt_imm(fn_bank)}")
+            self._emit(f"    mov ({bank_slot}),a")
+            self._emit("    call fn_scv_cart_select_bank")
+            self._emit(f"    call {body_label}")
+            self._emit("    call fn_scv_cart_restore_bank")
+            self._emit("    ret")
+            self._emit("")
+
+        self._emit(f"@{body_label}")
 
         if self.current_fn.param_symbols:
             self._emit("    -- args are preloaded by caller")
@@ -3901,22 +4402,91 @@ class L7801L65Emitter:
             self._emit(f"    call fn_{callee}")
             return
 
-        if callee in {"scv_load_bg_array", "scv_load_bg_sprite_array"}:
+        if callee in {
+            "scv_load_bg_array",
+            "scv_load_bg_sprite_array",
+            "scv_patch_bg_column_right",
+            "scv_patch_bg_column_left",
+            "scv_patch_bg_row_top",
+            "scv_patch_bg_row_bottom",
+        }:
             if len(args) != 3:
                 raise ConversionError(
                     f"Call arity mismatch for {callee}: expected 3, got {len(args)}"
                 )
 
-            slot_pattern = self._alloc_symbol(self._arg_symbol_name(callee, "pattern_slot"))
-            slot_count = self._alloc_symbol(self._arg_symbol_name(callee, "pattern_count"))
+            first_param_name = self.SCV_API_PARAMS[callee][0]
+            second_param_name = self.SCV_API_PARAMS[callee][1]
+            slot_pattern = self._alloc_symbol(self._arg_symbol_name(callee, first_param_name))
+            slot_count = self._alloc_symbol(self._arg_symbol_name(callee, second_param_name))
+
+            source_index = 1
+            count_index = 2
+            if callee in {
+                "scv_patch_bg_column_right",
+                "scv_patch_bg_column_left",
+                "scv_patch_bg_row_top",
+                "scv_patch_bg_row_bottom",
+            }:
+                source_index = 2
+                count_index = 1
 
             self._emit_expr_to_a(args[0])
             self._emit(f"    mov ({slot_pattern}),a")
 
+            self._emit_expr_to_a(args[count_index])
+            self._emit(f"    mov ({slot_count}),a")
+
+            if not isinstance(args[source_index], c_ast.ID):
+                coord = getattr(args[source_index], "coord", "unknown")
+                raise ConversionError(
+                    f"{callee} source must be a ROM or RAM array identifier at {coord}"
+                )
+
+            src_alias = args[source_index].name
+            rom_alias = self._resolve_rom_array_alias(src_alias)
+            ram_alias = self._resolve_ram_array_alias(src_alias)
+            if rom_alias is None and ram_alias is None:
+                coord = getattr(args[source_index], "coord", "unknown")
+                raise ConversionError(
+                    f"{callee} source '{src_alias}' must be a ROM or RAM array identifier at {coord}"
+                )
+
+            if rom_alias is not None:
+                self._emit(f"    lxi de,{self.rom_array_labels[rom_alias]}")
+            else:
+                self._emit(f"    lxi de,{self.ram_array_labels[ram_alias]}")
+
+            if params is None:
+                params = self.SCV_API_PARAMS[callee]
+                self.function_params[callee] = params
+            self.extern_functions.add(callee)
+            self._emit(f"    call fn_{callee}")
+            return
+
+        if callee in {"scv_map_extract_column", "scv_map_extract_row"}:
+            if len(args) != 6:
+                raise ConversionError(
+                    f"Call arity mismatch for {callee}: expected 6, got {len(args)}"
+                )
+
+            if not isinstance(args[0], c_ast.ID):
+                coord = getattr(args[0], "coord", "unknown")
+                raise ConversionError(
+                    f"{callee} destination must be a RAM array identifier at {coord}"
+                )
+
+            dst_alias = self._resolve_ram_array_alias(args[0].name)
+            if dst_alias is None:
+                coord = getattr(args[0], "coord", "unknown")
+                raise ConversionError(
+                    f"{callee} destination must be a RAM array identifier at {coord}"
+                )
+
             if not isinstance(args[1], c_ast.ID):
                 coord = getattr(args[1], "coord", "unknown")
                 raise ConversionError(
-                    f"scv_load_bg_array source must be a ROM or RAM array identifier at {coord}"
+                    f"{callee} source must be a ROM or RAM array identifier at {coord}"
                 )
 
             src_alias = args[1].name
@@ -3925,12 +4495,24 @@ class L7801L65Emitter:
             if rom_alias is None and ram_alias is None:
                 coord = getattr(args[1], "coord", "unknown")
                 raise ConversionError(
-                    f"scv_load_bg_array source '{src_alias}' must be a ROM or RAM array identifier at {coord}"
+                    f"{callee} source '{src_alias}' must be a ROM or RAM array identifier at {coord}"
                 )
 
-            self._emit_expr_to_a(args[2])
-            self._emit(f"    mov ({slot_count}),a")
+            map_width_slot = self._alloc_symbol(self._arg_symbol_name(callee, "map_width"))
+            map_x_slot = self._alloc_symbol(self._arg_symbol_name(callee, "map_x"))
+            map_y_slot = self._alloc_symbol(self._arg_symbol_name(callee, "map_y"))
+            count_slot = self._alloc_symbol(self._arg_symbol_name(callee, "count"))
 
+            self._emit_expr_to_a(args[2])
+            self._emit(f"    mov ({map_width_slot}),a")
+            self._emit_expr_to_a(args[3])
+            self._emit(f"    mov ({map_x_slot}),a")
+            self._emit_expr_to_a(args[4])
+            self._emit(f"    mov ({map_y_slot}),a")
+            self._emit_expr_to_a(args[5])
+            self._emit(f"    mov ({count_slot}),a")
+
+            self._emit(f"    lxi hl,{self.ram_array_labels[dst_alias]}")
             if rom_alias is not None:
                 self._emit(f"    lxi de,{self.rom_array_labels[rom_alias]}")
             else:
@@ -5012,6 +5594,19 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         default="16",
         help="Warn when RAM/stack headroom is below this byte count (default: 16)",
     )
+    parser.add_argument(
+        "--cart-metadata-output",
+        help="Optional path to write SCV cartridge metadata JSON sidecar",
+    )
+    parser.add_argument(
+        "--emit-cart-package",
+        action="store_true",
+        help="Assemble the generated .l7801 and emit a cartridge package directory using current banking metadata",
+    )
+    parser.add_argument(
+        "--cart-package-dir",
+        help="Optional output directory for emitted cartridge package files",
+    )
     return parser.parse_args(argv)
 
 
@@ -5090,6 +5685,209 @@ def run_validation_asm7801(output_file: Path, compare_bin: Optional[Path]) -> Tu
         assembled_bin.unlink(missing_ok=True)
 
 
+def _assemble_with_asm7801(output_file: Path):
+    from asm7801 import assemble_program, parse_program
+
+    text = output_file.read_text(encoding="utf-8")
+    program = parse_program(text)
+    return assemble_program(program)
+
+
+def _label_span_from_assembled(assembled, start_label: str, end_label: str) -> Tuple[int, int]:
+    labels = assembled.labels
+    if start_label not in labels:
+        raise ConversionError(f"Packaging label '{start_label}' not found in assembled image")
+    if end_label not in labels:
+        raise ConversionError(f"Packaging label '{end_label}' not found in assembled image")
+
+    start_addr = labels[start_label]
+    end_addr = labels[end_label]
+    next_addrs = sorted(addr for addr in labels.values() if addr > end_addr)
+    exclusive_end_addr = next_addrs[0] if next_addrs else assembled.origin + len(assembled.image)
+
+    start = start_addr - assembled.origin
+    end = exclusive_end_addr - assembled.origin
+    if start < 0 or end < start or end > len(assembled.image):
+        raise ConversionError(
+            f"Invalid assembled label span for {start_label}..{end_label}: start={start} end={end}"
+        )
+    return start, end
+
+
+def emit_cart_package(
+    emitter: L7801L65Emitter,
+    output_file: Path,
+    package_dir: Path,
+) -> Dict[str, object]:
+    assembled = _assemble_with_asm7801(output_file)
+    metadata = emitter.get_cart_metadata()
+    bank_sizes = emitter.get_cart_bank_sizes()
+    banked_call_edges = emitter.get_banked_call_edges()
+    trampoline_edges = emitter.get_trampoline_call_edges()
+    illegal_banked_edges = emitter.get_illegal_banked_call_edges()
+
+    if illegal_banked_edges:
+        edge_descriptions = ", ".join(
+            f"{edge['caller']}[bank {edge['caller_bank']}] -> {edge['callee']}[bank {edge['callee_bank']}]"
+            for edge in illegal_banked_edges
+        )
+        raise ConversionError(
+            "Current cart packaging cannot place callers that already live in non-zero banks; "
+            f"illegal banked call edges: {edge_descriptions}"
+        )
+
+    package_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest: Dict[str, object] = {
+        "version": 1,
+        "profile": metadata["profile"],
+        "layout": metadata["layout"],
+        "status": "partial-package",
+        "bank_sizes": bank_sizes,
+        "runtime_origin": assembled.origin,
+        "hook_backend": metadata["hook_backend"],
+        "bank_files": [],
+        "code_placements": [],
+        "rom_data_placements": [],
+        "unpackaged_functions": [],
+        "trampolines": metadata["trampolines"],
+        "trampoline_call_edges": trampoline_edges,
+        "illegal_banked_call_edges": illegal_banked_edges,
+        "banked_call_edges": banked_call_edges,
+        "warnings": [],
+    }
+
+    bank0_path = package_dir / "bank0_runtime.bin"
+    bank0_path.write_bytes(assembled.image)
+    manifest["bank_files"].append(
+        {
+            "bank": 0,
+            "path": bank0_path.name,
+            "kind": "runtime-flat-image",
+            "size": len(assembled.image),
+        }
+    )
+
+    bank_buffers = [bytearray(size) for size in bank_sizes]
+    bank_offsets = [0 for _ in bank_sizes]
+    has_packaged_aux_content = False
+
+    for trampoline in metadata["trampolines"]:
+        bank_id = int(trampoline["bank"])
+        start, end = _label_span_from_assembled(
+            assembled,
+            str(trampoline["body_label"]),
+            str(trampoline["end_label"]),
+        )
+        payload = assembled.image[start:end]
+        bank_size = bank_sizes[bank_id]
+        bank_offset = bank_offsets[bank_id]
+        if bank_offset + len(payload) > bank_size:
+            raise ConversionError(
+                f"Bank {bank_id} overflow while packaging function '{trampoline['function']}' ({bank_offset + len(payload)} > {bank_size})"
+            )
+
+        bank_buffers[bank_id][bank_offset:bank_offset + len(payload)] = payload
+        manifest["code_placements"].append(
+            {
+                "function": trampoline["function"],
+                "bank": bank_id,
+                "size": len(payload),
+                "flat_image_offset": start,
+                "bank_offset": bank_offset,
+                "body_label": trampoline["body_label"],
+            }
+        )
+        bank_offsets[bank_id] = bank_offset + len(payload)
+        has_packaged_aux_content = True
+
+    for block in emitter.rom_data_blocks:
+        bank_id = emitter.rom_bank_hints.get(block.alias_name, 0)
+        if bank_id == 0:
+            continue
+
+        if block.label not in assembled.labels:
+            raise ConversionError(
+                f"Unable to package ROM data '{block.alias_name}': label '{block.label}' not found in assembled image"
+            )
+
+        start = assembled.labels[block.label] - assembled.origin
+        if start < 0:
+            raise ConversionError(
+                f"Unable to package ROM data '{block.alias_name}': assembled offset underflow"
+            )
+        end = start + len(block.data)
+        if end > len(assembled.image):
+            raise ConversionError(
+                f"Unable to package ROM data '{block.alias_name}': assembled image slice exceeds image size"
+            )
+
+        bank_offset = bank_offsets[bank_id]
+        bank_size = bank_sizes[bank_id]
+        if bank_offset + len(block.data) > bank_size:
+            raise ConversionError(
+                f"Bank {bank_id} overflow while packaging ROM data '{block.alias_name}' ({bank_offset + len(block.data)} > {bank_size})"
+            )
+
+        payload = assembled.image[start:end]
+        bank_buffers[bank_id][bank_offset:bank_offset + len(payload)] = payload
+        manifest["rom_data_placements"].append(
+            {
+                "name": block.alias_name,
+                "bank": bank_id,
+                "size": len(payload),
+                "flat_image_offset": start,
+                "bank_offset": bank_offset,
+            }
+        )
+        bank_offsets[bank_id] = bank_offset + len(payload)
+        has_packaged_aux_content = True
+
+    for bank_id in range(1, len(bank_sizes)):
+        if bank_offsets[bank_id] == 0:
+            continue
+        has_code = any(placement["bank"] == bank_id for placement in manifest["code_placements"])
+        has_data = any(placement["bank"] == bank_id for placement in manifest["rom_data_placements"])
+        bank_path = package_dir / f"bank{bank_id}_payload.bin"
+        bank_path.write_bytes(bytes(bank_buffers[bank_id][:bank_offsets[bank_id]]))
+        manifest["bank_files"].append(
+            {
+                "bank": bank_id,
+                "path": bank_path.name,
+                "kind": "bank-payload",
+                "size": bank_offsets[bank_id],
+                "contains_code": has_code,
+                "contains_data": has_data,
+            }
+        )
+
+    unpackaged_functions = [
+        {"name": fn_name, "bank": bank_id}
+        for fn_name, bank_id in sorted(emitter.function_bank_hints.items())
+        if bank_id != 0 and fn_name not in {placement["function"] for placement in manifest["code_placements"]}
+    ]
+    manifest["unpackaged_functions"] = unpackaged_functions
+    if unpackaged_functions:
+        manifest["warnings"].append(
+            "Some functions assigned to non-zero banks were not emitted into bank payloads."
+        )
+    if not has_packaged_aux_content:
+        manifest["warnings"].append(
+            "No non-zero-bank ROM data blocks were packaged; auxiliary bank payloads are empty or omitted."
+        )
+    if manifest["code_placements"] and not unpackaged_functions:
+        manifest["status"] = "code-and-data-packaged"
+    elif not unpackaged_functions and has_packaged_aux_content:
+        manifest["status"] = "data-packaged"
+
+    manifest_path = package_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {
+        "manifest_path": manifest_path,
+        "manifest": manifest,
+    }
+
+
 def main(argv: List[str]) -> int:
     args = parse_args(argv)
 
@@ -5131,6 +5929,35 @@ def main(argv: List[str]) -> int:
 
     output_path.write_text(output, encoding="utf-8")
     print(f"wrote {output_path}")
+    if emitter.has_cart_metadata():
+        cart_metadata_path = (
+            Path(args.cart_metadata_output)
+            if args.cart_metadata_output
+            else output_path.with_suffix(".cart.json")
+        )
+        cart_metadata_path.write_text(
+            json.dumps(emitter.get_cart_metadata(), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"wrote {cart_metadata_path}")
+        if args.emit_cart_package:
+            cart_package_dir = (
+                Path(args.cart_package_dir)
+                if args.cart_package_dir
+                else output_path.with_suffix("")
+            )
+            try:
+                package_result = emit_cart_package(emitter, output_path, cart_package_dir)
+            except ConversionError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+            print(f"wrote {package_result['manifest_path']}")
+    elif args.emit_cart_package:
+        print(
+            "error: --emit-cart-package requires banking metadata from pragmas or non-flat cart profile",
+            file=sys.stderr,
+        )
+        return 2
     if args.ram_base == "auto":
         if ram_base == L7801L65Emitter.RECLAIMED_RAM_BASE:
             print(

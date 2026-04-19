@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Convert PNG images into SCV 16x16 SCV asset frame data."""
+"""Convert PNG images into SCV asset frame data.
+
+The supported production path is 16x16 sprite/background-sprite patterns.
+8x16 background-character output is retained only for regression probes around
+the text/tile plane and should not be treated as a normal custom-background
+rendering path.
+"""
 
 from __future__ import annotations
 
@@ -32,12 +38,15 @@ def _pixel_is_set(
     threshold: int,
     *,
     dark_is_set: bool,
+    opaque_is_set: bool = False,
     transparent_rgb: Optional[Tuple[int, int, int]] = None,
 ) -> bool:
-    if rgba[3] < 128:
+    if rgba[3] == 0:
         return False
     if transparent_rgb is not None and (rgba[0], rgba[1], rgba[2]) == transparent_rgb:
         return False
+    if opaque_is_set:
+        return True
     luminance = (rgba[0] * 299 + rgba[1] * 587 + rgba[2] * 114) // 1000
     if dark_is_set:
         return luminance < threshold
@@ -49,6 +58,7 @@ def _frame_to_bytes(
     *,
     threshold: int,
     dark_is_set: bool,
+    opaque_is_set: bool = False,
     transparent_rgb: Optional[Tuple[int, int, int]] = None,
 ) -> List[int]:
     width, height = image.size
@@ -73,6 +83,7 @@ def _frame_to_bytes(
                     pixels[x, y],
                     threshold,
                     dark_is_set=dark_is_set,
+                    opaque_is_set=opaque_is_set,
                     transparent_rgb=transparent_rgb,
                 ):
                     value |= 1 << (7 - i)
@@ -80,10 +91,43 @@ def _frame_to_bytes(
                     pixels[x, y + 1],
                     threshold,
                     dark_is_set=dark_is_set,
+                    opaque_is_set=opaque_is_set,
                     transparent_rgb=transparent_rgb,
                 ):
                     value |= 1 << (3 - i)
             data.append(value)
+    return data
+
+
+def _frame_to_bg_char_bytes(
+    image: Image.Image,
+    *,
+    threshold: int,
+    dark_is_set: bool,
+    opaque_is_set: bool = False,
+    transparent_rgb: Optional[Tuple[int, int, int]] = None,
+) -> List[int]:
+    width, height = image.size
+    if width != 8 or height != 16:
+        raise PngAssetError(
+            f"SCV background character tiles must be 8x16 pixels, got {width}x{height}"
+        )
+
+    rgba = image.convert("RGBA")
+    pixels = rgba.load()
+    data: List[int] = []
+    for y in range(16):
+        value = 0
+        for x in range(8):
+            if _pixel_is_set(
+                pixels[x, y],
+                threshold,
+                dark_is_set=dark_is_set,
+                opaque_is_set=opaque_is_set,
+                transparent_rgb=transparent_rgb,
+            ):
+                value |= 1 << (7 - x)
+        data.append(value)
     return data
 
 
@@ -114,6 +158,33 @@ def _background_colorkey(image: Image.Image) -> Optional[Tuple[int, int, int]]:
     return max(rgb_counts.items(), key=lambda item: item[1])[0]
 
 
+def _asset_transparency_mode(
+    image: Image.Image,
+    *,
+    kind: str,
+) -> tuple[bool, Optional[Tuple[int, int, int]]]:
+    rgba = image.convert("RGBA")
+    pixels = rgba.load()
+    width, height = rgba.size
+    has_alpha_holes = False
+
+    for y in range(height):
+        for x in range(width):
+            if pixels[x, y][3] < 128:
+                has_alpha_holes = True
+                break
+        if has_alpha_holes:
+            break
+
+    if has_alpha_holes:
+        return True, None
+
+    if kind in {"background", "backgroundsheet"}:
+        return True, _background_colorkey(image)
+
+    return True, None
+
+
 def load_png_asset_frames(
     path: Path,
     *,
@@ -125,26 +196,44 @@ def load_png_asset_frames(
 ) -> List[ScvPngFrame]:
     if not path.exists():
         raise PngAssetError(f"PNG asset not found: {path}")
-    if frame_width != 16 or frame_height != 16:
-        raise PngAssetError(
-            f"Only 16x16 sprite frames are currently supported, got {frame_width}x{frame_height}"
-        )
+    if kind in {"sprite", "spritesheet"}:
+        if frame_width != 16 or frame_height != 16:
+            raise PngAssetError(
+                f"Only 16x16 sprite frames are currently supported, got {frame_width}x{frame_height}"
+            )
+    elif kind in {"background", "backgroundsheet"}:
+        if (frame_width, frame_height) not in {(8, 16), (16, 16)}:
+            raise PngAssetError(
+                "Background assets must use 16x16 background-sprite tiles in normal use; "
+                "8x16 is reserved for regression/probe experiments only; "
+                f"got {frame_width}x{frame_height}"
+            )
 
     image = Image.open(path)
     width, height = image.size
 
     if kind in {"sprite", "background"}:
-        if width != 16 or height != 16:
+        if width != frame_width or height != frame_height:
             raise PngAssetError(
-                f"Asset {name} must be exactly 16x16 pixels, got {width}x{height}"
+                f"Asset {name} must be exactly {frame_width}x{frame_height} pixels, got {width}x{height}"
             )
-        transparent_rgb = _background_colorkey(image) if kind == "background" else None
-        frame_bytes = _frame_to_bytes(
-            image,
-            threshold=threshold,
-            dark_is_set=True,
-            transparent_rgb=transparent_rgb,
-        )
+        opaque_is_set, transparent_rgb = _asset_transparency_mode(image, kind=kind)
+        if kind == "background" and frame_width == 8 and frame_height == 16:
+            frame_bytes = _frame_to_bg_char_bytes(
+                image,
+                threshold=threshold,
+                dark_is_set=True,
+                opaque_is_set=opaque_is_set,
+                transparent_rgb=transparent_rgb,
+            )
+        else:
+            frame_bytes = _frame_to_bytes(
+                image,
+                threshold=threshold,
+                dark_is_set=True,
+                opaque_is_set=opaque_is_set,
+                transparent_rgb=transparent_rgb,
+            )
         return [
             ScvPngFrame(
                 symbol_name=f"asset_{name}",
@@ -163,15 +252,23 @@ def load_png_asset_frames(
     for top in range(0, height, frame_height):
         for left in range(0, width, frame_width):
             crop = image.crop((left, top, left + frame_width, top + frame_height))
-            transparent_rgb = (
-                _background_colorkey(crop) if kind == "backgroundsheet" else None
-            )
-            frame_bytes = _frame_to_bytes(
-                crop,
-                threshold=threshold,
-                dark_is_set=True,
-                transparent_rgb=transparent_rgb,
-            )
+            opaque_is_set, transparent_rgb = _asset_transparency_mode(crop, kind=kind)
+            if kind == "backgroundsheet" and frame_width == 8 and frame_height == 16:
+                frame_bytes = _frame_to_bg_char_bytes(
+                    crop,
+                    threshold=threshold,
+                    dark_is_set=True,
+                    opaque_is_set=opaque_is_set,
+                    transparent_rgb=transparent_rgb,
+                )
+            else:
+                frame_bytes = _frame_to_bytes(
+                    crop,
+                    threshold=threshold,
+                    dark_is_set=True,
+                    opaque_is_set=opaque_is_set,
+                    transparent_rgb=transparent_rgb,
+                )
             frames.append(
                 ScvPngFrame(
                     symbol_name=f"asset_{name}_{frame_index}",
