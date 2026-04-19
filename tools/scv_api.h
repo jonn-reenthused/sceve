@@ -184,6 +184,27 @@ extern void scv_scroll_bg_right(void);
 extern void scv_scroll_bg_left(void);
 extern void scv_scroll_bg_down(void);
 extern void scv_scroll_bg_up(void);
+extern void scv_patch_bg_column_right(int row_start, int row_count, char *src_array);
+extern void scv_patch_bg_column_left(int row_start, int row_count, char *src_array);
+extern void scv_patch_bg_row_top(int col_start, int col_count, char *src_array);
+extern void scv_patch_bg_row_bottom(int col_start, int col_count, char *src_array);
+
+/* Map window extraction helpers:
+ * These helpers copy one row or column from a larger flat tilemap into a RAM
+ * edge buffer, ready for scv_patch_bg_*().
+ *
+ * Tilemap layout is row-major:
+ *   map[(map_y * map_width) + map_x]
+ *
+ * dst_array must be a mutable RAM array.
+ * src_map may be a ROM or RAM array.
+ */
+extern void scv_map_extract_column(char *dst_array, char *src_map,
+                                   int map_width, int map_x,
+                                   int map_y, int count);
+extern void scv_map_extract_row(char *dst_array, char *src_map,
+                                int map_width, int map_x,
+                                int map_y, int count);
 
 /* ----------------------------------------------------------------
  * Software sprites (up to 8, index 0-7)
@@ -265,6 +286,16 @@ extern void scv_bios_clear_pattern_vram(void);
 extern void scv_bios_clear_hw_sprites(void);
 extern int scv_bios_add16_hi(int de_hi, int de_lo, int hl_hi, int hl_lo);
 extern int scv_bios_sub16_hi(int de_hi, int de_lo, int hl_hi, int hl_lo);
+
+/* ----------------------------------------------------------------
+ * Cartridge banking ABI
+ * These are compiler-recognized runtime hooks used by generated banked
+ * function trampolines. The converter now emits cartridge-profile-specific
+ * hook backends for development and packaging metadata, but they still stop
+ * short of a verified hardware mapper write sequence.
+ * ---------------------------------------------------------------- */
+extern void scv_cart_select_bank(int bank_id);
+extern void scv_cart_restore_bank(void);
 
 /* Compatibility aliases recognised by the converter. */
 extern int scv_bios_add16(int de_hi, int de_lo, int hl_hi, int hl_lo);
