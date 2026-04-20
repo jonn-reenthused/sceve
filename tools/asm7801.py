@@ -326,7 +326,7 @@ def _instruction_size(instruction: InstructionStatement) -> int:
         return 2 if operands[0].lower() == "a" else 3
     if mnemonic == "inc":
         return 2
-    if mnemonic in {"dcr", "add", "sub", "ana", "xra", "ora", "inx"}:
+    if mnemonic in {"dcr", "add", "sub", "ana", "xra", "ora", "eqa", "inx"}:
         if mnemonic == "dcr":
             return 1
         if mnemonic == "inx":
@@ -545,6 +545,10 @@ def _encode_instruction(
         left = operands[0].lower()
         right = operands[1].lower()
         return _encode_reg_alu("ana", left, right)
+    if mnemonic == "eqa":
+        left = operands[0].lower()
+        right = operands[1].lower()
+        return _encode_reg_alu("eqa", left, right)
     if mnemonic == "xra":
         left = operands[0].lower()
         right = operands[1].lower()
