@@ -106,7 +106,6 @@ class L7801L65Emitter:
 
     API_ALIASES: Dict[str, str] = {
         "scv_bios_add16": "scv_bios_add16_hi",
-        "scv_bios_sub16": "scv_bios_sub16_hi",
         "svc_bios_add16": "scv_bios_add16_hi",
         "svc_bios_sub16": "scv_bios_sub16_hi",
         "svc_bios_clear_text_vram": "scv_bios_clear_text_vram",
@@ -118,15 +117,10 @@ class L7801L65Emitter:
     SCV_API_PARAMS: Dict[str, List[str]] = {
         "strlen": ["str"],
         "sprintf": ["dst", "fmt", "value"],
-        "scv_random_seed": ["seed"],
-        "scv_random_u8": [],
         "scv_random_range": ["min_value", "max_value"],
-        "scv_cart_select_bank": ["bank_id"],
         "scv_cart_restore_bank": [],
         "scv_print_char": ["x", "y", "ch"],
         "scv_print_string": ["x", "y"],
-        "scv_draw_tile": ["row", "col", "tile_id"],
-        "scv_draw_bg_tile": ["row", "col", "tile_id"],
         "scv_get_bg_tile": ["row", "col"],
         "scv_set_bg_scroll": ["scroll_x", "scroll_y"],
         "scv_vram_copy": ["addr_hi", "addr_lo", "src_array", "byte_count"],
@@ -136,8 +130,6 @@ class L7801L65Emitter:
         "scv_draw_bg_tile_scrolled": ["row", "col", "tile_id"],
         "scv_scroll_bg_right": [],
         "scv_scroll_bg_left": [],
-        "scv_scroll_bg_down": [],
-        "scv_scroll_bg_up": [],
         "scv_patch_bg_column_right": ["row_start", "row_count", "src_array"],
         "scv_patch_bg_column_left": ["row_start", "row_count", "src_array"],
         "scv_patch_bg_row_top": ["col_start", "col_count", "src_array"],
@@ -438,19 +430,33 @@ class L7801L65Emitter:
             "    ret",
         ],
         "scv_print_string": [
+            "    mvi h,0x30",
+            "    mvi l,0x40",
+            "    mov b,({fn}__arg_y)",
+            "@{fn}_row_loop",
+            "    mov a,b",
+            "    nei a,0",
+            "    jr {fn}_col_step",
+            "    adi l,0x20",
+            "    aci h,0",
+            "    dcr b",
+            "    jre {fn}_row_loop",
+            "@{fn}_col_step",
+            "    mov a,({fn}__arg_x)",
+            "    adi a,0x03",
+            "    add a,l",
+            "    mov l,a",
+            "    aci h,0",
             "@{fn}_loop",
             "    ldax (de)",
             "    eqi a,0",
             "    skz",
-            "    jmp {fn}_print_char",
+            "    jmp {fn}_store_char",
             "    ret",
-            "@{fn}_print_char",
-            "    mov (scv_api__arg_2),a",
-            "    call fn_scv_print_char",
+            "@{fn}_store_char",
+            "    stax (hl)",
             "    inx de",
-            "    mov a,({fn}__arg_x)",
-            "    adi a,0x01",
-            "    mov ({fn}__arg_x),a",
+            "    inx hl",
             "    jmp {fn}_loop",
         ],
         "scv_draw_tile": [
@@ -2008,10 +2014,10 @@ class L7801L65Emitter:
             "    mvi h,0xFF",
             "    ldaxi (hl)",
             "    mov b,a",
-            "    ldaxi (hl)",
-            "    mov c,a",
             "    inx hl",
             "    ldaxi (hl)",
+            "    mov c,a",
+            "    ldax (hl)",
             "    nei a,0",
             "    jre {fn}_no_collision",
             "    mov a,({fn}__arg_id_b)",
@@ -2021,15 +2027,39 @@ class L7801L65Emitter:
             "    mov l,a",
             "    mvi h,0xFF",
             "    ldaxi (hl)",
-            "    eqa a,b",
-            "    jre {fn}_no_collision",
-            "    ldaxi (hl)",
-            "    eqa a,c",
-            "    jre {fn}_no_collision",
+            "    mov d,a",
             "    inx hl",
             "    ldaxi (hl)",
+            "    mov e,a",
+            "    ldax (hl)",
             "    nei a,0",
             "    jre {fn}_no_collision",
+            "    mov a,b",
+            "    mov h,a",
+            "    mov a,c",
+            "    mov l,a",
+            "    mov a,e",
+            "    sub a,l",
+            "    skc",
+            "    jmp {fn}_x_b_ge_a",
+            "    mov a,l",
+            "    sub a,e",
+            "@{fn}_x_b_ge_a",
+            "    mvi b,0x10",
+            "    sub a,b",
+            "    skc",
+            "    jmp {fn}_no_collision",
+            "    mov a,d",
+            "    sub a,h",
+            "    skc",
+            "    jmp {fn}_y_b_ge_a",
+            "    mov a,h",
+            "    sub a,d",
+            "@{fn}_y_b_ge_a",
+            "    mvi b,0x10",
+            "    sub a,b",
+            "    skc",
+            "    jmp {fn}_no_collision",
             "    mvi a,0x01",
             "    mov (scv_collision_result),a",
             "    ret",
@@ -2103,6 +2133,7 @@ class L7801L65Emitter:
         self.current_fn: Optional[FunctionContext] = None
         self.function_params: Dict[str, List[str]] = {}
         self.signed_param_names_by_function: Dict[str, Set[str]] = {}
+        self.signed_returning_functions: Set[str] = set()
         self.defined_functions: Set[str] = set()
         self.extern_functions: Set[str] = set()
         self.label_counter = 0
@@ -2186,6 +2217,7 @@ class L7801L65Emitter:
         self.function_end_labels = {}
         self.function_params = {}
         self.signed_param_names_by_function = {}
+        self.signed_returning_functions = set()
         self.defined_functions = set()
         self.extern_functions = set()
         parser = c_parser.CParser()
@@ -2266,6 +2298,7 @@ class L7801L65Emitter:
     def _collect_function_signatures(self, ast: c_ast.FileAST) -> None:
         self.function_params = {}
         self.signed_param_names_by_function = {}
+        self.signed_returning_functions = set()
         defined: Set[str] = set()
 
         # First pass: collect definitions (FuncDef nodes)
@@ -2284,6 +2317,8 @@ class L7801L65Emitter:
                             signed_params.add(param.name)
             self.function_params[ext.decl.name] = params
             self.signed_param_names_by_function[ext.decl.name] = signed_params
+            if self._type_node_is_signed_char(decl.type):
+                self.signed_returning_functions.add(ext.decl.name)
 
         self.defined_functions = set(defined)
 
@@ -2309,6 +2344,8 @@ class L7801L65Emitter:
                             signed_params.add(param.name)
             self.function_params[ext.name] = params
             self.signed_param_names_by_function[ext.name] = signed_params
+            if self._type_node_is_signed_char(ext.type.type):
+                self.signed_returning_functions.add(ext.name)
 
     def _collect_function_calls(self, ast: c_ast.FileAST) -> None:
         self.function_calls = {name: set() for name in self.defined_functions}
@@ -3027,6 +3064,31 @@ class L7801L65Emitter:
         self._emit("    add a,l")
         self._emit("    mov l,a")
         self._emit("    aci h,0")
+
+    def _emit_mul_a_by_const(self, factor: int) -> None:
+        if factor < 0 or factor > 0xFF:
+            raise ConversionError(f"Unsupported constant multiply factor {factor}")
+        if factor == 0:
+            self._emit("    mvi a,0x00")
+            return
+        if factor == 1:
+            return
+
+        self._emit("    mov b,a")
+        first_term = True
+        for bit in range(8):
+            if (factor & (1 << bit)) == 0:
+                continue
+            self._emit("    mov a,b")
+            for _ in range(bit):
+                self._emit("    add a,a")
+            if first_term:
+                self._emit("    mov d,a")
+                first_term = False
+            else:
+                self._emit("    add a,d")
+                self._emit("    mov d,a")
+        self._emit("    mov a,d")
 
     def _unsupported(self, node: c_ast.Node, message: str) -> None:
         if self.strict:
@@ -3809,6 +3871,12 @@ class L7801L65Emitter:
             if expr.op in {"+", "-", "*", "&", "|", "^", "<<", ">>"}:
                 return self._expr_is_signed_char(expr.left) or self._expr_is_signed_char(expr.right)
             return False
+
+        if isinstance(expr, c_ast.FuncCall):
+            if not isinstance(expr.name, c_ast.ID):
+                return False
+            callee = self.API_ALIASES.get(expr.name.name, expr.name.name)
+            return callee in self.signed_returning_functions
 
         return False
 
@@ -4714,48 +4782,8 @@ class L7801L65Emitter:
             self._emit("    mov b,a")  # b = outer index
 
             # Multiply outer index by row width; result ends up in a.
-            if row_width == 1:
-                self._emit("    mov a,b")
-            elif row_width == 2:
-                self._emit("    mov a,b")
-                self._emit("    add a,a")  # a *= 2
-            elif row_width == 4:
-                self._emit("    mov a,b")
-                self._emit("    add a,a")  # a *= 2
-                self._emit("    add a,a")  # a *= 4
-            elif row_width == 8:
-                self._emit("    mov a,b")
-                self._emit("    add a,a")  # a *= 2
-                self._emit("    add a,a")  # a *= 4
-                self._emit("    add a,a")  # a *= 8
-            elif row_width == 10:
-                self._emit("    mov a,b")
-                self._emit("    add a,a")
-                self._emit("    add a,a")
-                self._emit("    add a,a")
-                self._emit("    mov c,a")
-                self._emit("    mov a,b")
-                self._emit("    add a,a")
-                self._emit("    add a,c")
-            elif row_width == 16:
-                self._emit("    mov a,b")
-                self._emit("    add a,a")
-                self._emit("    add a,a")
-                self._emit("    add a,a")
-                self._emit("    add a,a")
-            else:
-                # General case: loop accumulates in d, result moved to a at the end.
-                self._emit("    mov c,a")  # c = outer index
-                self._emit(f"    mvi b,{self._fmt_imm(row_width)}")  # b = row_width (counter)
-                self._emit("    mvi d,0")  # d = accumulator
-                mul_loop = self._new_label("mul_loop")
-                self._emit(f"@{mul_loop}")
-                self._emit("    mov a,d")
-                self._emit("    add a,c")
-                self._emit("    mov d,a")
-                self._emit("    dcr b")
-                self._emit(f"    jre {mul_loop}")
-                self._emit("    mov a,d")  # a = outer_idx * row_width
+            self._emit("    mov a,b")
+            self._emit_mul_a_by_const(row_width)
 
             # Add inner index
             const_inner_idx: Optional[int] = None
@@ -4830,92 +4858,12 @@ class L7801L65Emitter:
             self._emit("    ldax (hl)")
             return
 
-        # Runtime index: no static bounds guarantee, perform ROM base + index.
         self._emit_expr_to_a(expr.subscript)
         self._emit("    mov b,a")
         self._emit(f"    lxi hl,{label}")
         self._emit("    mov a,b")
         self._emit_add_a_to_hl()
         self._emit("    ldax (hl)")
-
-    def _emit_struct_field_to_a(self, struct_ref: c_ast.StructRef) -> None:
-        """Emit code to load a struct field into register A.
-        
-        Supports both direct struct instances (e.g., actor.field) and
-        array-indexed struct fields (e.g., actors[i].field) without using temp variables.
-        """
-        if struct_ref.type != '.':
-            self._unsupported(struct_ref, "Only '.' struct access is supported")
-            return
-        if not isinstance(struct_ref.field, c_ast.ID):
-            self._unsupported(struct_ref, "Only named struct fields are supported")
-            return
-        
-        field_name = struct_ref.field.name
-        
-        # Check if this is array-indexed struct field access (e.g., actors[i].field)
-        if isinstance(struct_ref.name, c_ast.ArrayRef):
-            array_ref = struct_ref.name
-            if not isinstance(array_ref.name, c_ast.ID):
-                self._unsupported(struct_ref, "Only direct array variables in struct field access")
-                return
-            
-            array_name = array_ref.name.name
-            array_alias = self._resolve_ram_array_alias(array_name)
-            if array_alias is None:
-                coord = getattr(struct_ref, "coord", "unknown")
-                raise ConversionError(f"Array '{array_name}' not found at {coord}")
-            
-            array_base = self.ram_array_labels[array_alias]
-            # Extract the element type to get struct name and size
-            struct_type_name = self.ram_array_struct_types.get(array_alias, array_name)
-            struct_size = self._get_array_struct_size(array_alias, array_name)
-            field_offset = self._get_struct_field_offset(struct_type_name, field_name)
-            
-            # Compute address: base + (index * struct_size) + field_offset
-            self._emit_expr_to_a(array_ref.subscript)  # a = index
-            
-            if struct_size == 1:
-                self._emit("    mov b,a")  # b = index
-            elif struct_size == 2:
-                self._emit("    add a,a")  # a *= 2
-                self._emit("    mov b,a")  # b = index * 2
-            elif struct_size == 4:
-                self._emit("    add a,a")  # a *= 2
-                self._emit("    add a,a")  # a *= 4
-                self._emit("    mov b,a")  # b = index * 4
-            else:
-                # General multiply: a = index, compute a * struct_size using d as accumulator
-                self._emit("    mov c,a")  # c = index (multiplier)
-                self._emit(f"    mvi b,{self._fmt_imm(struct_size)}")  # b = struct_size (counter)
-                self._emit("    mvi d,0")  # d = accumulator
-                mul_loop = self._new_label("struct_mul_loop")
-                self._emit(f"@{mul_loop}")
-                self._emit("    mov a,d")  # a = accumulator
-                self._emit("    add a,c")  # a += index
-                self._emit("    mov d,a")  # d = new accumulator
-                self._emit("    dcr b")  # b--
-                self._emit(f"    jre {mul_loop}")  # jump if b != 0
-                self._emit("    mov a,d")  # a = result from d
-                self._emit("    mov b,a")  # b = index * struct_size
-            
-            # Load base address into HL
-            self._emit(f"    lxi hl,{array_base}")
-            # Add computed offset
-            self._emit("    mov a,b")  # a = index_offset
-            if field_offset != 0:
-                self._emit(f"    mvi c,{self._fmt_imm(field_offset)}")
-                self._emit("    add a,c")  # a += field_offset
-            self._emit_add_a_to_hl()
-            self._emit("    ldax (hl)")
-            return
-        
-        # Direct struct field access (non-indexed)
-        sym = self._resolve_struct_field_symbol(struct_ref)
-        if sym in self.rom_constants:
-            self._emit(f"    mvi a,{self._fmt_imm(self.rom_constants[sym])}")
-        else:
-            self._emit(f"    mov a,({sym})")
 
     def _get_array_struct_size(self, array_alias: str, array_name: str) -> int:
         """Get the struct size for an array-of-structs."""

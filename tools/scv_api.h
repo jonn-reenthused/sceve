@@ -378,9 +378,9 @@ extern void scv_play_tone_raw(int p1, int p2, int p3);
 extern void scv_play_tone_packet(int pitch, int param);
 
 /* ----------------------------------------------------------------
- * Collision detection (axis-aligned, 1-cell resolution)
+ * Collision detection (axis-aligned 16x16 sprite overlap)
  * Call scv_check_collision(), then read scv_collision_result.
- * Returns 1 if both sprites are at the same (col, row); 0 otherwise.
+ * Returns 1 if two active hardware sprites overlap; 0 otherwise.
  * Treats inactive sprites (flags==0) as non-colliding.
  * ---------------------------------------------------------------- */
 extern void scv_check_collision(int id_a, int id_b);
