@@ -4095,7 +4095,7 @@ class L7801L65Emitter:
             self._emit(f"    mov ({sym}),a")
 
     def _emit_assignment(self, assign: c_ast.Assignment) -> None:
-        if assign.op != "=":
+        if assign.op not in {"=", "/=", "%="}:
             self._unsupported(assign, f"Assignment operator {assign.op}")
             return
 
@@ -4112,9 +4112,13 @@ class L7801L65Emitter:
                     f"Cannot assign to const global '{lvalue_name}' at {coord}"
                 )
             target = self._resolve_symbol(assign.lvalue.name)
+            left_expr: Optional[c_ast.Node] = assign.lvalue
         elif isinstance(assign.lvalue, c_ast.StructRef):
             # Handle both direct and array-indexed struct field assignment
             if isinstance(assign.lvalue.name, c_ast.ArrayRef):
+                if assign.op != "=":
+                    self._unsupported(assign, "Compound assignment for array-indexed struct fields is not supported")
+                    return
                 # Array-indexed: actors[i].field = value
                 # Emit the assignment with dynamic address computation
                 self._emit_expr_to_a(assign.rvalue)
@@ -4125,7 +4129,11 @@ class L7801L65Emitter:
             else:
                 # Direct struct field: actor.field = value
                 target = self._resolve_struct_field_symbol(assign.lvalue)
+                left_expr = assign.lvalue
         elif isinstance(assign.lvalue, c_ast.ArrayRef):
+            if assign.op != "=":
+                self._unsupported(assign, "Compound assignment for RAM arrays is not supported")
+                return
             if not isinstance(assign.lvalue.name, c_ast.ID):
                 self._unsupported(assign, "Only direct RAM array assignment is supported")
                 return
@@ -4143,7 +4151,12 @@ class L7801L65Emitter:
             self._unsupported(assign, "Only direct variable or struct.field assignment is supported")
             return
 
-        self._emit_expr_to_a(assign.rvalue)
+        if assign.op == "=":
+            self._emit_expr_to_a(assign.rvalue)
+        elif assign.op == "/=":
+            self._emit_divmod_expr(left_expr, assign.rvalue, want_remainder=False)
+        else:
+            self._emit_divmod_expr(left_expr, assign.rvalue, want_remainder=True)
         self._emit(f"    mov ({target}),a")
 
     def _emit_if(self, node: c_ast.If) -> None:
@@ -4882,6 +4895,63 @@ class L7801L65Emitter:
             return self.struct_field_offsets[struct_name][field_name]
         raise ConversionError(f"Unknown field '{field_name}' on struct '{struct_name}'")
 
+    def _emit_struct_field_to_a(self, struct_ref: c_ast.StructRef) -> None:
+        if isinstance(struct_ref.name, c_ast.ArrayRef):
+            if not isinstance(struct_ref.field, c_ast.ID):
+                self._unsupported(struct_ref, "Only named struct fields are supported")
+                return
+
+            array_ref = struct_ref.name
+            field_name = struct_ref.field.name
+            if not isinstance(array_ref.name, c_ast.ID):
+                self._unsupported(struct_ref, "Only direct array variables in struct field access")
+                return
+
+            array_name = array_ref.name.name
+            array_alias = self._resolve_ram_array_alias(array_name)
+            if array_alias is None:
+                coord = getattr(struct_ref, "coord", "unknown")
+                raise ConversionError(f"Array '{array_name}' not found at {coord}")
+
+            array_base = self.ram_array_labels[array_alias]
+            struct_type_name = self.ram_array_struct_types.get(array_alias, array_name)
+            struct_size = self._get_array_struct_size(array_alias, array_name)
+            field_offset = self._get_struct_field_offset(struct_type_name, field_name)
+
+            self._emit_expr_to_a(array_ref.subscript)
+            if struct_size == 1:
+                self._emit("    mov b,a")
+            elif struct_size == 2:
+                self._emit("    add a,a")
+                self._emit("    mov b,a")
+            elif struct_size == 4:
+                self._emit("    add a,a")
+                self._emit("    add a,a")
+                self._emit("    mov b,a")
+            else:
+                mul_loop = self._new_label("struct_load_mul_loop")
+                self._emit("    mov c,a")
+                self._emit(f"    mvi b,{self._fmt_imm(struct_size)}")
+                self._emit("    mvi d,0x00")
+                self._emit(f"@{mul_loop}")
+                self._emit("    mov a,d")
+                self._emit("    add a,c")
+                self._emit("    mov d,a")
+                self._emit("    dcr b")
+                self._emit(f"    jre {mul_loop}")
+                self._emit("    mov a,d")
+                self._emit("    mov b,a")
+
+            self._emit(f"    mvi a,{self._fmt_imm(field_offset)}")
+            self._emit("    add a,b")
+            self._emit(f"    lxi hl,{array_base}")
+            self._emit_add_a_to_hl()
+            self._emit("    ldax (hl)")
+            return
+
+        target = self._resolve_struct_field_symbol(struct_ref)
+        self._emit(f"    mov a,({target})")
+
     def _emit_ram_array_store(self, array_alias: str, subscript: c_ast.Node, value_register: str = "a") -> None:
         array_base = self.ram_array_labels[array_alias]
 
@@ -5043,7 +5113,7 @@ class L7801L65Emitter:
             var = self._resolve_symbol(unary.expr.name)
             self._emit(f"    mov a,({var})")
             self._emit("    mov b,a")
-            self._emit("    mov a,0xFF")
+            self._emit("    mvi a,0xFF")
             self._emit("    add a,b")  # a = 0xFF + b = b - 1
             self._emit(f"    mov ({var}),a")
             # Return decremented value
@@ -5106,7 +5176,7 @@ class L7801L65Emitter:
     def _emit_binary(self, binary: c_ast.BinaryOp) -> None:
         op = binary.op
 
-        if op in {"+", "-", "&", "|", "^", "*", "<<", ">>"}:
+        if op in {"+", "-", "&", "|", "^", "*", "/", "%", "<<", ">>"}:
             if op == "*":
                 lhs_slot = self._alloc_temp_symbol("arith__tmp0")
                 rhs_slot = self._alloc_temp_symbol("arith__tmp1")
@@ -5141,6 +5211,14 @@ class L7801L65Emitter:
 
                 self._emit(f"@{done_label}")
                 self._emit(f"    mov a,({acc_slot})")
+                return
+
+            if op == "/":
+                self._emit_divmod_expr(binary.left, binary.right, want_remainder=False)
+                return
+
+            if op == "%":
+                self._emit_divmod_expr(binary.left, binary.right, want_remainder=True)
                 return
 
             if op == "<<":
@@ -5188,6 +5266,67 @@ class L7801L65Emitter:
             return
 
         self._unsupported(binary, f"Binary operator {op}")
+
+    def _emit_divmod_expr(
+        self, left: c_ast.Node, right: c_ast.Node, *, want_remainder: bool
+    ) -> None:
+        depth = self.expr_tmp_depth
+        self.expr_tmp_depth += 1
+        lhs_slot = self._alloc_temp_symbol(f"arith__tmp_expr_{depth * 4}")
+        rhs_slot = self._alloc_temp_symbol(f"arith__tmp_expr_{depth * 4 + 1}")
+        quot_slot = self._alloc_temp_symbol(f"arith__tmp_expr_{depth * 4 + 2}")
+        rem_slot = self._alloc_temp_symbol(f"arith__tmp_expr_{depth * 4 + 3}")
+        zero_label = self._new_label("divmod_zero")
+        loop_label = self._new_label("divmod_loop")
+        apply_label = self._new_label("divmod_apply")
+        done_label = self._new_label("divmod_done")
+        end_label = self._new_label("divmod_end")
+
+        self._emit_expr_to_a(left)
+        self._emit(f"    mov ({lhs_slot}),a")
+        self._emit(f"    mov ({rem_slot}),a")
+        self._emit_expr_to_a(right)
+        self._emit(f"    mov ({rhs_slot}),a")
+        self._emit("    mvi a,0x00")
+        self._emit(f"    mov ({quot_slot}),a")
+
+        self._emit(f"    mov a,({rhs_slot})")
+        self._emit("    nei a,0")
+        self._emit(f"    jmp {zero_label}")
+        self._emit(f"    jmp {loop_label}")
+
+        self._emit(f"@{loop_label}")
+        self._emit(f"    mov a,({rem_slot})")
+        self._emit("    mov b,a")
+        self._emit(f"    mov a,({rhs_slot})")
+        self._emit("    mov c,a")
+        self._emit("    mov a,b")
+        self._emit("    sub a,c")
+        self._emit("    skc")
+        self._emit(f"    jmp {apply_label}")
+        self._emit(f"    jmp {done_label}")
+
+        self._emit(f"@{apply_label}")
+        self._emit(f"    mov ({rem_slot}),a")
+        self._emit(f"    mov a,({quot_slot})")
+        self._emit("    adi a,0x01")
+        self._emit(f"    mov ({quot_slot}),a")
+        self._emit(f"    jmp {loop_label}")
+
+        self._emit(f"@{zero_label}")
+        if want_remainder:
+            self._emit(f"    mov a,({lhs_slot})")
+        else:
+            self._emit("    mvi a,0x00")
+        self._emit(f"    jmp {end_label}")
+
+        self._emit(f"@{done_label}")
+        if want_remainder:
+            self._emit(f"    mov a,({rem_slot})")
+        else:
+            self._emit(f"    mov a,({quot_slot})")
+        self._emit(f"@{end_label}")
+        self.expr_tmp_depth -= 1
 
     def _emit_compare(self, binary: c_ast.BinaryOp) -> None:
         true_label = self._new_label("cmp_true")
