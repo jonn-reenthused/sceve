@@ -24,12 +24,14 @@ So i've very quickly implemented some functions, text, graphics and sound.  None
 
 ## Dependencies
 You need pycparser installed for the actual c_to_l7801.py converter
-Obviously you need l65 installed too, you'll probably have to compile it yourself (https://github.com/g012/l65)
+~~Obviously you need l65 installed too, you'll probably have to compile it yourself (https://github.com/g012/l65)~~
 For the graphics converters you'll need Pillow installed
 
-### Note: I have now implemented a very simple assembler, asm7801.py in the tools/ folder.  It *should* be good, but keep l7801 around as a fallback.
+~~### Note: I have now implemented a very simple assembler, asm7801.py in the tools/ folder.  It *should* be good, but keep l7801 around as a fallback.~~
 
-As a side-note.  When I started working on this l65 was in (moderately) active development, i've just noticed that it's been 2 years since anything happened.  I don't *think* it'll be a problem.
+~~As a side-note.  When I started working on this l65 was in (moderately) active development, i've just noticed that it's been 2 years since anything happened.  I don't *think* it'll be a problem.~~
+
+The parser has now moved beyond l7801.  To implement a couple of functions I had to use some opcodes that aren't available in it, or at least don't seem to encode correctly. But I have now made two projects using the included assembler and its been fine.
 
 ## How to use it
 There are numerous examples, but they've kind of evolved with the project, so some of them do things a bit differently.  game_demo.c *should* be pretty up to date with stuff.
@@ -46,7 +48,9 @@ I should also add that i've NEVER tested this on an actual SCV. I should build a
 
 Anyway, have fun.
 
-N.B. No, I never made Jurl using this.  In the time between starting it and now I managed to release 30 versions of Jurl on other platforms and i'm a little burnt out now.  Maybe in the future.
+~~N.B. No, I never made Jurl using this.  In the time between starting it and now I managed to release 30 versions of Jurl on other platforms and i'm a little burnt out now.  Maybe in the future.~~
+
+Ok, I have now written most of Jurl for the Super Cassette Vision, it's available at https://tonsomo.itch.io
 
 ## Example Images
 ![Image showing VisionRunner example running in mame](images/visionrunner-in-mame.png "VisionRunner in MAME")
