@@ -24,25 +24,20 @@ So i've very quickly implemented some functions, text, graphics and sound.  None
 
 ## Dependencies
 You need pycparser installed for the actual c_to_l7801.py converter
-~~Obviously you need l65 installed too, you'll probably have to compile it yourself (https://github.com/g012/l65)~~
 For the graphics converters you'll need Pillow installed
-
-~~### Note: I have now implemented a very simple assembler, asm7801.py in the tools/ folder.  It *should* be good, but keep l7801 around as a fallback.~~
-
-~~As a side-note.  When I started working on this l65 was in (moderately) active development, i've just noticed that it's been 2 years since anything happened.  I don't *think* it'll be a problem.~~
 
 The parser has now moved beyond l7801.  To implement a couple of functions I had to use some opcodes that aren't available in it, or at least don't seem to encode correctly. But I have now made two projects using the included assembler and its been fine.
 
 ## How to use it
 There are numerous examples, but they've kind of evolved with the project, so some of them do things a bit differently.  game_demo.c *should* be pretty up to date with stuff.
 
-This is a very small subset of C, it has some niceties like structs and enums, but it's missing a few important bits that can make writing a game a little trickier, like for,while and switch. I'm guessing i'll implement while next - just because it's most useful for a game loop, but for would be nice (although with very limited memory it might not be that useful).  Also, no actual headers are supported, there's no stdio, no stdlib.  I've implemented text writing, strlen and a limited sprintf command though.
+This is a very small subset of C, it has some niceties like structs and enums, but it's missing a few important bits that can make writing a game a little trickier, like for and switch.  Also, no actual headers are supported, there's no stdio, no stdlib.  I've implemented text writing, strlen and a limited sprintf command though.
 
 Basically I concentrated on stuff that I knew I used for Jurl.
 
 More information in the tools folder.
 
-But basically, create a c file, run it through c_to_l7801.py and (if that works) run the resultant .l7801 file through l7801.  That should get you a bin file that can be run on an SCV or an emulator.
+But basically, create a c file, run it through c_to_l7801.py and (if that works) run the resultant .l7801 file through asm7801.  That should get you a bin file that can be run on an SCV or an emulator.
 
 I should also add that i've NEVER tested this on an actual SCV. I should build a cartridge at some point.
 
