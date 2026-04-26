@@ -13,13 +13,17 @@ It should still be fine
 from __future__ import annotations
 
 import argparse
+import binascii
+import hashlib
 import json
 import re
 import subprocess
 import sys
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+from xml.sax.saxutils import escape as xml_escape
 
 from png_to_scv import PngAssetError, ScvPngFrame, load_png_asset_frames
 
@@ -80,6 +84,24 @@ class L7801L65Emitter:
     RECLAIMED_RAM_BASE = 0xFF80
     CART_PROFILES: Dict[str, Dict[str, object]] = {
         "flat32": {"bank_count": 1, "layout": "flat", "supports_bank_switch": False, "hook_backend": "flat32-fixed"},
+        "flat32_ram4k": {
+            "bank_count": 1,
+            "layout": "flat",
+            "supports_bank_switch": False,
+            "hook_backend": "flat32-fixed",
+            "cart_ram_base": 0xE000,
+            "cart_ram_size": 0x1000,
+            "cart_ram_battery": False,
+        },
+        "flat32_ram4k_battery": {
+            "bank_count": 1,
+            "layout": "flat",
+            "supports_bank_switch": False,
+            "hook_backend": "flat32-fixed",
+            "cart_ram_base": 0xE000,
+            "cart_ram_size": 0x1000,
+            "cart_ram_battery": True,
+        },
         "banked64": {"bank_count": 2, "layout": "monolithic", "supports_bank_switch": True, "hook_backend": "banked64-shadow-v1"},
         "banked128": {"bank_count": 4, "layout": "monolithic", "supports_bank_switch": True, "hook_backend": "banked128-shadow-v1"},
         "split32_8": {"bank_count": 2, "layout": "split", "supports_bank_switch": True, "hook_backend": "split32_8-shadow-v1"},
@@ -87,6 +109,8 @@ class L7801L65Emitter:
     }
     CART_BANK_SIZES: Dict[str, List[int]] = {
         "flat32": [0x8000],
+        "flat32_ram4k": [0x8000],
+        "flat32_ram4k_battery": [0x8000],
         "banked64": [0x8000, 0x8000],
         "banked128": [0x8000, 0x8000, 0x8000, 0x8000],
         "split32_8": [0x8000, 0x2000],
@@ -119,6 +143,15 @@ class L7801L65Emitter:
         "sprintf": ["dst", "fmt", "value"],
         "scv_random_range": ["min_value", "max_value"],
         "scv_cart_restore_bank": [],
+        "scv_cart_ram_clear": [],
+        "scv_cart_ram_read": ["offset_hi", "offset_lo"],
+        "scv_cart_ram_write": ["offset_hi", "offset_lo", "value"],
+        "scv_cart_ram_read16_lo": ["offset_hi", "offset_lo"],
+        "scv_cart_ram_read16_hi": ["offset_hi", "offset_lo"],
+        "scv_cart_ram_write16": ["offset_hi", "offset_lo", "value_lo", "value_hi"],
+        "scv_cart_ram_fill": ["offset_hi", "offset_lo", "byte_count", "value"],
+        "scv_cart_ram_copy_to": ["offset_hi", "offset_lo", "src_array", "byte_count"],
+        "scv_cart_ram_copy_from": ["offset_hi", "offset_lo", "dst_array", "byte_count"],
         "scv_print_char": ["x", "y", "ch"],
         "scv_print_string": ["x", "y"],
         "scv_get_bg_tile": ["row", "col"],
@@ -2154,6 +2187,12 @@ class L7801L65Emitter:
         self.ram_array_byte_lengths: Dict[str, int] = {}
         self.ram_array_element_sizes: Dict[str, int] = {}
         self.ram_array_struct_types: Dict[str, str] = {}
+        self.cart_ram_decl_hints: Dict[str, int] = {}
+        self.cart_ram_scalar_offsets: Dict[str, int] = {}
+        self.cart_ram_array_offsets: Dict[str, int] = {}
+        self.cart_ram_array_lengths: Dict[str, int] = {}
+        self.signed_cart_ram_scalars: Set[str] = set()
+        self.signed_cart_ram_arrays: Set[str] = set()
         self.signed_symbols: Set[str] = set()
         self.signed_ram_arrays: Set[str] = set()
         self.signed_rom_arrays: Set[str] = set()
@@ -2200,6 +2239,12 @@ class L7801L65Emitter:
         self.ram_array_byte_lengths = {}
         self.ram_array_element_sizes = {}
         self.ram_array_struct_types = {}
+        self.cart_ram_decl_hints = {}
+        self.cart_ram_scalar_offsets = {}
+        self.cart_ram_array_offsets = {}
+        self.cart_ram_array_lengths = {}
+        self.signed_cart_ram_scalars = set()
+        self.signed_cart_ram_arrays = set()
         self.signed_symbols = set()
         self.signed_ram_arrays = set()
         self.signed_rom_arrays = set()
@@ -2380,6 +2425,13 @@ class L7801L65Emitter:
             self.extern_functions.add("scv_random_u8")
             if "scv_random_u8" not in self.function_params:
                 self.function_params["scv_random_u8"] = self.SCV_API_PARAMS["scv_random_u8"]
+        if "scv_cart_ram_clear" in self.extern_functions:
+            self.extern_functions.add("scv_cart_ram_fill")
+            self.extern_functions.add("scv_cart_ram_write")
+            if "scv_cart_ram_fill" not in self.function_params:
+                self.function_params["scv_cart_ram_fill"] = self.SCV_API_PARAMS["scv_cart_ram_fill"]
+            if "scv_cart_ram_write" not in self.function_params:
+                self.function_params["scv_cart_ram_write"] = self.SCV_API_PARAMS["scv_cart_ram_write"]
 
         self._emit("-- *** stubs for extern functions — replace with real implementations ***")
         self._emit("")
@@ -2415,6 +2467,18 @@ class L7801L65Emitter:
             sound_asset = next((s for s in self.sound_assets if s.play_fn == fn), None)
             if fn == "scv_cart_select_bank" or fn == "scv_cart_restore_bank":
                 impl = self._build_cart_hook_impl(fn)
+            elif fn in {
+                "scv_cart_ram_clear",
+                "scv_cart_ram_read",
+                "scv_cart_ram_write",
+                "scv_cart_ram_read16_lo",
+                "scv_cart_ram_read16_hi",
+                "scv_cart_ram_write16",
+                "scv_cart_ram_fill",
+                "scv_cart_ram_copy_to",
+                "scv_cart_ram_copy_from",
+            }:
+                impl = self._build_cart_ram_impl(fn)
             elif asset_fn is not None:
                 impl = self._build_asset_loader_impl(asset_fn)
             elif bulk_asset_frames is not None:
@@ -2627,6 +2691,9 @@ class L7801L65Emitter:
                 if stripped.startswith("#pragma scv_cart_profile"):
                     self._parse_cart_profile_directive(stripped)
                     continue
+                if stripped.startswith("#pragma scv_cart_ram_data"):
+                    self._parse_cart_ram_data_directive(stripped)
+                    continue
                 if stripped.startswith("#pragma scv_bank_data"):
                     self._parse_bank_data_directive(stripped)
                     continue
@@ -2697,6 +2764,30 @@ class L7801L65Emitter:
                 f"Unsupported SCV cart profile '{profile}'. Supported profiles: {supported}"
             )
         self.cart_profile = profile
+
+    def _parse_cart_ram_data_directive(self, line: str) -> None:
+        match = re.fullmatch(
+            r"#pragma\s+scv_cart_ram_data\s*\(\s*([^\s,]+)\s*,\s*([^\s\)]+)\s*\)\s+([A-Za-z_][A-Za-z0-9_]*)\s*",
+            line,
+        )
+        if not match:
+            raise ConversionError(f"Invalid SCV cart RAM data directive: {line}")
+
+        if self._get_cart_ram_window() is None:
+            raise ConversionError(
+                "#pragma scv_cart_ram_data requires an scv_cart_profile with cartridge RAM metadata"
+            )
+
+        try:
+            offset_hi = int(match.group(1), 0)
+            offset_lo = int(match.group(2), 0)
+        except ValueError as exc:
+            raise ConversionError(f"Invalid SCV cart RAM offset in directive: {line}") from exc
+
+        if not (0 <= offset_hi <= 0xFF and 0 <= offset_lo <= 0xFF):
+            raise ConversionError(f"SCV cart RAM offsets must be 8-bit values in directive: {line}")
+
+        self.cart_ram_decl_hints[match.group(3)] = ((offset_hi & 0xFF) << 8) | (offset_lo & 0xFF)
 
     def _parse_bank_function_directive(self, line: str) -> None:
         match = re.fullmatch(r"#pragma\s+scv_bank\s+([^\s]+)\s*", line)
@@ -2824,8 +2915,17 @@ class L7801L65Emitter:
     def get_cart_hook_backend_name(self) -> str:
         return str(self.CART_PROFILES[self.cart_profile]["hook_backend"])
 
+    def _get_cart_ram_window(self) -> Optional[Tuple[int, int, bool]]:
+        profile_info = self.CART_PROFILES[self.cart_profile]
+        base = profile_info.get("cart_ram_base")
+        size = profile_info.get("cart_ram_size")
+        if base is None or size is None:
+            return None
+        return int(base), int(size), bool(profile_info.get("cart_ram_battery", False))
+
     def get_cart_metadata(self) -> Dict[str, object]:
         profile_info = self.CART_PROFILES[self.cart_profile]
+        cart_ram_window = self._get_cart_ram_window()
         return {
             "version": 1,
             "profile": self.cart_profile,
@@ -2856,15 +2956,197 @@ class L7801L65Emitter:
             "trampoline_call_edges": self.get_trampoline_call_edges(),
             "illegal_banked_call_edges": self.get_illegal_banked_call_edges(),
             "banked_call_edges": self.get_banked_call_edges(),
+            "cart_ram": None if cart_ram_window is None else {
+                "base": cart_ram_window[0],
+                "size": cart_ram_window[1],
+                "battery_backed": cart_ram_window[2],
+            },
         }
 
     def get_cart_bank_sizes(self) -> List[int]:
         return list(self.CART_BANK_SIZES[self.cart_profile])
 
     def _get_cart_backend_shadow_symbol(self) -> Optional[str]:
-        if self.cart_profile == "flat32":
+        if self.cart_profile in {"flat32", "flat32_ram4k", "flat32_ram4k_battery"}:
             return None
         return f"scv_cart__{self.cart_profile}_shadow_bank"
+
+    def _build_cart_ram_impl(self, fn_name: str) -> List[str]:
+        window = self._get_cart_ram_window()
+        if window is None:
+            raise ConversionError(
+                f"Cart RAM API '{fn_name}' requires an scv_cart_profile with cartridge RAM metadata"
+            )
+
+        base, size, _battery = window
+        base_hi = self._fmt_imm((base >> 8) & 0xFF)
+        base_lo = self._fmt_imm(base & 0xFF)
+        size_hi = self._fmt_imm((size >> 8) & 0xFF)
+        size_lo = self._fmt_imm(size & 0xFF)
+
+        addr_prelude = [
+            f"    mvi h,{base_hi}",
+            f"    mvi l,{base_lo}",
+            "    mov a,({fn}__arg_offset_lo)",
+            "    add a,l",
+            "    mov l,a",
+            "    mov a,({fn}__arg_offset_hi)",
+            f"    aci a,{base_hi}",
+            "    mov h,a",
+        ]
+
+        if fn_name == "scv_cart_ram_clear":
+            clear_impl: List[str] = []
+            full_pages = (size >> 8) & 0xFF
+            tail_bytes = size & 0xFF
+            fill_offset_hi = self._arg_symbol_name("scv_cart_ram_fill", "offset_hi")
+            fill_offset_lo = self._arg_symbol_name("scv_cart_ram_fill", "offset_lo")
+            fill_byte_count = self._arg_symbol_name("scv_cart_ram_fill", "byte_count")
+            fill_value = self._arg_symbol_name("scv_cart_ram_fill", "value")
+            write_offset_hi = self._arg_symbol_name("scv_cart_ram_write", "offset_hi")
+            write_offset_lo = self._arg_symbol_name("scv_cart_ram_write", "offset_lo")
+            write_value = self._arg_symbol_name("scv_cart_ram_write", "value")
+
+            for page in range(full_pages):
+                page_hi = self._fmt_imm(page)
+                clear_impl.extend(
+                    [
+                        f"    mvi a,{page_hi}",
+                        f"    mov ({fill_offset_hi}),a",
+                        "    mvi a,0x00",
+                        f"    mov ({fill_offset_lo}),a",
+                        "    mvi a,0xFF",
+                        f"    mov ({fill_byte_count}),a",
+                        "    mvi a,0x00",
+                        f"    mov ({fill_value}),a",
+                        "    call fn_scv_cart_ram_fill",
+                        f"    mvi a,{page_hi}",
+                        f"    mov ({write_offset_hi}),a",
+                        "    mvi a,0xFF",
+                        f"    mov ({write_offset_lo}),a",
+                        "    mvi a,0x00",
+                        f"    mov ({write_value}),a",
+                        "    call fn_scv_cart_ram_write",
+                    ]
+                )
+
+            if tail_bytes != 0:
+                tail_hi = self._fmt_imm(full_pages)
+                clear_impl.extend(
+                    [
+                        f"    mvi a,{tail_hi}",
+                        f"    mov ({fill_offset_hi}),a",
+                        "    mvi a,0x00",
+                        f"    mov ({fill_offset_lo}),a",
+                        f"    mvi a,{self._fmt_imm(tail_bytes)}",
+                        f"    mov ({fill_byte_count}),a",
+                        "    mvi a,0x00",
+                        f"    mov ({fill_value}),a",
+                        "    call fn_scv_cart_ram_fill",
+                    ]
+                )
+
+            clear_impl.append("    ret")
+            return clear_impl
+
+        if fn_name == "scv_cart_ram_read":
+            return addr_prelude + [
+                "    ldax (hl)",
+                "    ret",
+            ]
+
+        if fn_name == "scv_cart_ram_write":
+            return addr_prelude + [
+                "    mov a,({fn}__arg_value)",
+                "    stax (hl)",
+                "    ret",
+            ]
+
+        if fn_name == "scv_cart_ram_read16_lo":
+            return addr_prelude + [
+                "    ldax (hl)",
+                "    ret",
+            ]
+
+        if fn_name == "scv_cart_ram_read16_hi":
+            return addr_prelude + [
+                "    inx hl",
+                "    ldax (hl)",
+                "    ret",
+            ]
+
+        if fn_name == "scv_cart_ram_write16":
+            return addr_prelude + [
+                "    mov a,({fn}__arg_value_lo)",
+                "    stax (hl)",
+                "    inx hl",
+                "    mov a,({fn}__arg_value_hi)",
+                "    stax (hl)",
+                "    ret",
+            ]
+
+        if fn_name == "scv_cart_ram_fill":
+            return addr_prelude + [
+                "    mov a,({fn}__arg_value)",
+                "    mov b,a",
+                "    mov a,({fn}__arg_byte_count)",
+                "    mov c,a",
+                "@{fn}_loop",
+                "    mov a,c",
+                "    nei a,0",
+                "    jr {fn}_done",
+                "    mov a,b",
+                "    stax (hl)",
+                "    inx hl",
+                "    mov a,c",
+                "    adi a,0xFF",
+                "    mov c,a",
+                "    jmp {fn}_loop",
+                "@{fn}_done",
+                "    ret",
+            ]
+
+        if fn_name == "scv_cart_ram_copy_to":
+            return addr_prelude + [
+                "    mov a,({fn}__arg_byte_count)",
+                "    mov c,a",
+                "@{fn}_loop",
+                "    mov a,c",
+                "    nei a,0",
+                "    jr {fn}_done",
+                "    ldax (de)",
+                "    stax (hl)",
+                "    inx de",
+                "    inx hl",
+                "    mov a,c",
+                "    adi a,0xFF",
+                "    mov c,a",
+                "    jmp {fn}_loop",
+                "@{fn}_done",
+                "    ret",
+            ]
+
+        if fn_name == "scv_cart_ram_copy_from":
+            return addr_prelude + [
+                "    mov a,({fn}__arg_byte_count)",
+                "    mov c,a",
+                "@{fn}_loop",
+                "    mov a,c",
+                "    nei a,0",
+                "    jr {fn}_done",
+                "    ldax (hl)",
+                "    stax (de)",
+                "    inx de",
+                "    inx hl",
+                "    mov a,c",
+                "    adi a,0xFF",
+                "    mov c,a",
+                "    jmp {fn}_loop",
+                "@{fn}_done",
+                "    ret",
+            ]
+
+        raise ConversionError(f"Unhandled cart RAM API implementation request for '{fn_name}'")
 
     def _get_cart_runtime_symbols(self) -> List[str]:
         symbols = ["scv_cart__current_bank", "scv_cart__saved_bank"]
@@ -3197,6 +3479,10 @@ class L7801L65Emitter:
         # extern variable declarations are forward declarations, not definitions
         is_extern = "extern" in (decl.storage or [])
         if is_extern:
+            if decl.name in self.cart_ram_decl_hints:
+                raise ConversionError(
+                    f"Cart RAM data directive cannot target extern declaration '{decl.name}'"
+                )
             return
 
         if decl.name in self.globals:
@@ -3205,6 +3491,7 @@ class L7801L65Emitter:
         self.globals.add(decl.name)
 
         is_const = self._is_const_decl(decl)
+        cart_ram_offset = self.cart_ram_decl_hints.get(decl.name)
         is_static = "static" in (decl.storage or [])
         if is_static and not is_const:
             coord = getattr(decl, "coord", "unknown")
@@ -3212,11 +3499,15 @@ class L7801L65Emitter:
                 f"Writable static global '{decl.name}' is not supported at {coord}. "
                 "Use const/static const for ROM data or a normal mutable variable for RAM."
             )
+        if cart_ram_offset is not None and is_const:
+            raise ConversionError(
+                f"Cart RAM data directive cannot target const global '{decl.name}'"
+            )
 
         if isinstance(decl.type, c_ast.ArrayDecl):
+            dims = self._extract_array_dims(decl.type)
             if is_const:
                 values = self._eval_const_array_u8(decl, decl.init)
-                dims = self._extract_array_dims(decl.type)
                 self._register_rom_data_block(decl.name, values, dims)
                 if self._decl_is_signed_char(decl):
                     self.signed_rom_arrays.add(decl.name)
@@ -3236,6 +3527,28 @@ class L7801L65Emitter:
                 )
 
             length = self._eval_const_u8(decl.type.dim)
+            if cart_ram_offset is not None:
+                window = self._get_cart_ram_window()
+                assert window is not None
+                _base, size, _battery = window
+                if len(dims) != 1:
+                    raise ConversionError(
+                        f"Cart RAM data directive currently supports only 1D arrays ('{decl.name}')"
+                    )
+                if self._extract_struct_type_from_decl(decl) is not None:
+                    raise ConversionError(
+                        f"Cart RAM data directive does not support struct arrays ('{decl.name}')"
+                    )
+                if cart_ram_offset + length > size:
+                    raise ConversionError(
+                        f"Cart RAM data '{decl.name}' exceeds cart RAM window: offset 0x{cart_ram_offset:04X}, size {length}"
+                    )
+                self.cart_ram_array_offsets[decl.name] = cart_ram_offset
+                self.cart_ram_array_lengths[decl.name] = length
+                if self._decl_is_signed_char(decl):
+                    self.signed_cart_ram_arrays.add(decl.name)
+                return
+
             struct_type = self._extract_struct_type_from_decl(decl)
             if struct_type is not None:
                 struct_name = struct_type.name
@@ -3282,6 +3595,19 @@ class L7801L65Emitter:
             self.rom_constants[decl.name] = self._eval_const_u8(decl.init)
             if self._decl_is_signed_char(decl):
                 self.signed_symbols.add(decl.name)
+            return
+
+        if cart_ram_offset is not None:
+            window = self._get_cart_ram_window()
+            assert window is not None
+            _base, size, _battery = window
+            if cart_ram_offset >= size:
+                raise ConversionError(
+                    f"Cart RAM data '{decl.name}' offset 0x{cart_ram_offset:04X} exceeds cart RAM window"
+                )
+            self.cart_ram_scalar_offsets[decl.name] = cart_ram_offset
+            if self._decl_is_signed_char(decl):
+                self.signed_cart_ram_scalars.add(decl.name)
             return
 
         self._alloc_symbol(decl.name)
@@ -3338,6 +3664,14 @@ class L7801L65Emitter:
             if frame_name in self.frame_symbol_offsets.get(self.current_fn.name, {}):
                 return frame_name
         if name in self.globals:
+            if name in self.cart_ram_scalar_offsets:
+                raise ConversionError(
+                    f"Cart RAM global '{name}' does not have a direct RAM symbol in this context"
+                )
+            if name in self.cart_ram_array_offsets:
+                raise ConversionError(
+                    f"Cart RAM array '{name}' does not have a direct RAM symbol in this context"
+                )
             return self._alloc_symbol(name)
         if self.current_fn:
             local_name = f"{self.current_fn.name}__{name}"
@@ -3837,6 +4171,8 @@ class L7801L65Emitter:
 
     def _expr_is_signed_char(self, expr: c_ast.Node) -> bool:
         if isinstance(expr, c_ast.ID):
+            if expr.name in self.signed_cart_ram_scalars:
+                return True
             try:
                 sym = self._resolve_symbol(expr.name)
             except ConversionError:
@@ -3845,6 +4181,8 @@ class L7801L65Emitter:
 
         if isinstance(expr, c_ast.ArrayRef):
             if isinstance(expr.name, c_ast.ID):
+                if expr.name.name in self.signed_cart_ram_arrays:
+                    return True
                 ram_alias = self._resolve_ram_array_alias(expr.name.name)
                 if ram_alias is not None:
                     return ram_alias in self.signed_ram_arrays
@@ -4111,7 +4449,10 @@ class L7801L65Emitter:
                 raise ConversionError(
                     f"Cannot assign to const global '{lvalue_name}' at {coord}"
                 )
-            target = self._resolve_symbol(assign.lvalue.name)
+            if lvalue_name in self.cart_ram_scalar_offsets:
+                target = None
+            else:
+                target = self._resolve_symbol(assign.lvalue.name)
             left_expr: Optional[c_ast.Node] = assign.lvalue
         elif isinstance(assign.lvalue, c_ast.StructRef):
             # Handle both direct and array-indexed struct field assignment
@@ -4138,14 +4479,18 @@ class L7801L65Emitter:
                 self._unsupported(assign, "Only direct RAM array assignment is supported")
                 return
             ram_alias = self._resolve_ram_array_alias(assign.lvalue.name.name)
-            if ram_alias is None:
+            cart_ram_offset = self.cart_ram_array_offsets.get(assign.lvalue.name.name)
+            if ram_alias is None and cart_ram_offset is None:
                 coord = getattr(assign, "coord", "unknown")
                 raise ConversionError(
                     f"Array '{assign.lvalue.name.name}' is not a mutable RAM array at {coord}"
                 )
             self._emit_expr_to_a(assign.rvalue)
-            self._emit("    mov c,a")
-            self._emit_ram_array_store(ram_alias, assign.lvalue.subscript, "c")
+            if cart_ram_offset is not None:
+                self._emit_cart_ram_array_store_from_a(cart_ram_offset, assign.lvalue.subscript)
+            else:
+                self._emit("    mov c,a")
+                self._emit_ram_array_store(ram_alias, assign.lvalue.subscript, "c")
             return
         else:
             self._unsupported(assign, "Only direct variable or struct.field assignment is supported")
@@ -4157,7 +4502,10 @@ class L7801L65Emitter:
             self._emit_divmod_expr(left_expr, assign.rvalue, want_remainder=False)
         else:
             self._emit_divmod_expr(left_expr, assign.rvalue, want_remainder=True)
-        self._emit(f"    mov ({target}),a")
+        if isinstance(assign.lvalue, c_ast.ID) and assign.lvalue.name in self.cart_ram_scalar_offsets:
+            self._emit_cart_ram_write_from_a(self.cart_ram_scalar_offsets[assign.lvalue.name])
+        else:
+            self._emit(f"    mov ({target}),a")
 
     def _emit_if(self, node: c_ast.If) -> None:
         else_label = self._new_label("if_else")
@@ -4483,6 +4831,90 @@ class L7801L65Emitter:
             self._emit(f"    call fn_{callee}")
             return
 
+        if callee == "scv_cart_ram_copy_to":
+            if len(args) != 4:
+                raise ConversionError(
+                    f"Call arity mismatch for {callee}: expected 4, got {len(args)}"
+                )
+
+            offset_hi = self._alloc_symbol(self._arg_symbol_name(callee, "offset_hi"))
+            offset_lo = self._alloc_symbol(self._arg_symbol_name(callee, "offset_lo"))
+            byte_count = self._alloc_symbol(self._arg_symbol_name(callee, "byte_count"))
+
+            self._emit_expr_to_a(args[0])
+            self._emit(f"    mov ({offset_hi}),a")
+            self._emit_expr_to_a(args[1])
+            self._emit(f"    mov ({offset_lo}),a")
+
+            if not isinstance(args[2], c_ast.ID):
+                coord = getattr(args[2], "coord", "unknown")
+                raise ConversionError(
+                    f"scv_cart_ram_copy_to source must be a ROM or RAM array identifier at {coord}"
+                )
+
+            src_alias = args[2].name
+            rom_alias = self._resolve_rom_array_alias(src_alias)
+            ram_alias = self._resolve_ram_array_alias(src_alias)
+            if rom_alias is None and ram_alias is None:
+                coord = getattr(args[2], "coord", "unknown")
+                raise ConversionError(
+                    f"scv_cart_ram_copy_to source '{src_alias}' must be a ROM or RAM array identifier at {coord}"
+                )
+
+            self._emit_expr_to_a(args[3])
+            self._emit(f"    mov ({byte_count}),a")
+
+            if rom_alias is not None:
+                self._emit(f"    lxi de,{self.rom_array_labels[rom_alias]}")
+            else:
+                self._emit(f"    lxi de,{self.ram_array_labels[ram_alias]}")
+
+            if params is None:
+                params = self.SCV_API_PARAMS[callee]
+                self.function_params[callee] = params
+            self.extern_functions.add(callee)
+            self._emit(f"    call fn_{callee}")
+            return
+
+        if callee == "scv_cart_ram_copy_from":
+            if len(args) != 4:
+                raise ConversionError(
+                    f"Call arity mismatch for {callee}: expected 4, got {len(args)}"
+                )
+
+            offset_hi = self._alloc_symbol(self._arg_symbol_name(callee, "offset_hi"))
+            offset_lo = self._alloc_symbol(self._arg_symbol_name(callee, "offset_lo"))
+            byte_count = self._alloc_symbol(self._arg_symbol_name(callee, "byte_count"))
+
+            self._emit_expr_to_a(args[0])
+            self._emit(f"    mov ({offset_hi}),a")
+            self._emit_expr_to_a(args[1])
+            self._emit(f"    mov ({offset_lo}),a")
+
+            if not isinstance(args[2], c_ast.ID):
+                coord = getattr(args[2], "coord", "unknown")
+                raise ConversionError(
+                    f"scv_cart_ram_copy_from destination must be a RAM array identifier at {coord}"
+                )
+
+            dst_alias = self._resolve_ram_array_alias(args[2].name)
+            if dst_alias is None:
+                coord = getattr(args[2], "coord", "unknown")
+                raise ConversionError(
+                    f"scv_cart_ram_copy_from destination must be a RAM array identifier at {coord}"
+                )
+
+            self._emit_expr_to_a(args[3])
+            self._emit(f"    mov ({byte_count}),a")
+            self._emit(f"    lxi de,{self.ram_array_labels[dst_alias]}")
+
+            if params is None:
+                params = self.SCV_API_PARAMS[callee]
+                self.function_params[callee] = params
+            self.extern_functions.add(callee)
+            self._emit(f"    call fn_{callee}")
+            return
+
         if callee in {
             "scv_load_bg_array",
             "scv_load_bg_sprite_array",
@@ -4691,15 +5123,28 @@ class L7801L65Emitter:
                 f"Call arity mismatch for {callee}: expected {len(params)}, got {len(args)}"
             )
 
+        arg_slots: List[str] = []
+        arg_tmp_slots: List[str] = []
+        call_tmp_depth = self.expr_tmp_depth
+        self.expr_tmp_depth += 1
+
         for idx, arg in enumerate(args):
+            tmp_slot = self._alloc_temp_symbol(f"call__tmp_arg_{call_tmp_depth * 8 + idx}")
             self._emit_expr_to_a(arg)
+            self._emit(f"    mov ({tmp_slot}),a")
+            arg_tmp_slots.append(tmp_slot)
             if params is not None:
                 slot = self._alloc_symbol(self._arg_symbol_name(callee, params[idx]))
-                self._emit(f"    mov ({slot}),a")
             else:
                 slot = self._alloc_symbol(f"{callee}__arg_arg{idx}")
                 self._emit("    -- external/unknown callee argument slot")
-                self._emit(f"    mov ({slot}),a")
+            arg_slots.append(slot)
+
+        self.expr_tmp_depth -= 1
+
+        for idx, slot in enumerate(arg_slots):
+            self._emit(f"    mov a,({arg_tmp_slots[idx]})")
+            self._emit(f"    mov ({slot}),a")
 
         self._emit(f"    call fn_{callee}")
 
@@ -4731,6 +5176,9 @@ class L7801L65Emitter:
             return
 
         if isinstance(expr, c_ast.ID):
+            if expr.name in self.cart_ram_scalar_offsets:
+                self._emit_cart_ram_read_to_a(self.cart_ram_scalar_offsets[expr.name])
+                return
             sym = self._resolve_symbol(expr.name)
             if sym in self.rom_constants:
                 self._emit(f"    mvi a,{self._fmt_imm(self.rom_constants[sym])}")
@@ -4835,9 +5283,12 @@ class L7801L65Emitter:
 
         alias = self._resolve_rom_array_alias(expr.name.name)
         ram_alias = None
+        cart_ram_array_offset = None
         if alias is None:
             ram_alias = self._resolve_ram_array_alias(expr.name.name)
         if alias is None and ram_alias is None:
+            cart_ram_array_offset = self.cart_ram_array_offsets.get(expr.name.name)
+        if alias is None and ram_alias is None and cart_ram_array_offset is None:
             coord = getattr(expr, "coord", "unknown")
             raise ConversionError(
                 f"Array '{expr.name.name}' is not a supported ROM or RAM array at {coord}"
@@ -4846,11 +5297,12 @@ class L7801L65Emitter:
         if alias is not None:
             label = self.rom_array_labels[alias]
             arr_len = self.rom_array_lengths[alias]
-            is_rom = True
-        else:
+        elif ram_alias is not None:
             label = self.ram_array_labels[ram_alias]
             arr_len = self.ram_array_lengths[ram_alias]
-            is_rom = False
+        else:
+            label = ""
+            arr_len = self.cart_ram_array_lengths[expr.name.name]
 
         const_idx: Optional[int] = None
         try:
@@ -4864,11 +5316,18 @@ class L7801L65Emitter:
                 raise ConversionError(
                     f"Array index {const_idx} out of bounds for '{expr.name.name}' (size {arr_len}) at {coord}"
                 )
+            if cart_ram_array_offset is not None:
+                self._emit_cart_ram_read_to_a(cart_ram_array_offset + const_idx)
+                return
             self._emit(f"    lxi hl,{label}")
             if const_idx != 0:
                 self._emit(f"    mvi a,{self._fmt_imm(const_idx)}")
                 self._emit_add_a_to_hl()
             self._emit("    ldax (hl)")
+            return
+
+        if cart_ram_array_offset is not None:
+            self._emit_cart_ram_read_indexed_to_a(cart_ram_array_offset, expr.subscript)
             return
 
         self._emit_expr_to_a(expr.subscript)
@@ -4877,6 +5336,68 @@ class L7801L65Emitter:
         self._emit("    mov a,b")
         self._emit_add_a_to_hl()
         self._emit("    ldax (hl)")
+
+    def _ensure_cart_ram_api_signature(self, fn_name: str) -> None:
+        if fn_name not in self.function_params:
+            self.function_params[fn_name] = self.SCV_API_PARAMS[fn_name]
+        self.extern_functions.add(fn_name)
+
+    def _emit_cart_ram_read_to_a(self, offset: int) -> None:
+        offset_hi = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_read", "offset_hi"))
+        offset_lo = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_read", "offset_lo"))
+        self._emit(f"    mvi a,{self._fmt_imm((offset >> 8) & 0xFF)}")
+        self._emit(f"    mov ({offset_hi}),a")
+        self._emit(f"    mvi a,{self._fmt_imm(offset & 0xFF)}")
+        self._emit(f"    mov ({offset_lo}),a")
+        self._ensure_cart_ram_api_signature("scv_cart_ram_read")
+        self._emit("    call fn_scv_cart_ram_read")
+
+    def _emit_cart_ram_read_indexed_to_a(self, base_offset: int, subscript: c_ast.Node) -> None:
+        offset_hi = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_read", "offset_hi"))
+        offset_lo = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_read", "offset_lo"))
+        self._emit_expr_to_a(subscript)
+        self._emit("    mov b,a")
+        self._emit(f"    mvi a,{self._fmt_imm(base_offset & 0xFF)}")
+        self._emit("    add a,b")
+        self._emit(f"    mov ({offset_lo}),a")
+        self._emit(f"    mvi a,{self._fmt_imm((base_offset >> 8) & 0xFF)}")
+        self._emit("    aci a,0x00")
+        self._emit(f"    mov ({offset_hi}),a")
+        self._ensure_cart_ram_api_signature("scv_cart_ram_read")
+        self._emit("    call fn_scv_cart_ram_read")
+
+    def _emit_cart_ram_write_from_a(self, offset: int) -> None:
+        offset_hi = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_write", "offset_hi"))
+        offset_lo = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_write", "offset_lo"))
+        value_slot = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_write", "value"))
+        self._emit("    mov c,a")
+        self._emit(f"    mvi a,{self._fmt_imm((offset >> 8) & 0xFF)}")
+        self._emit(f"    mov ({offset_hi}),a")
+        self._emit(f"    mvi a,{self._fmt_imm(offset & 0xFF)}")
+        self._emit(f"    mov ({offset_lo}),a")
+        self._emit("    mov a,c")
+        self._emit(f"    mov ({value_slot}),a")
+        self._ensure_cart_ram_api_signature("scv_cart_ram_write")
+        self._emit("    call fn_scv_cart_ram_write")
+
+    def _emit_cart_ram_array_store_from_a(self, base_offset: int, subscript: c_ast.Node) -> None:
+        offset_hi = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_write", "offset_hi"))
+        offset_lo = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_write", "offset_lo"))
+        value_slot = self._alloc_symbol(self._arg_symbol_name("scv_cart_ram_write", "value"))
+        value_tmp = self._alloc_temp_symbol("cart_ram_store_value")
+        self._emit(f"    mov ({value_tmp}),a")
+        self._emit_expr_to_a(subscript)
+        self._emit("    mov b,a")
+        self._emit(f"    mvi a,{self._fmt_imm(base_offset & 0xFF)}")
+        self._emit("    add a,b")
+        self._emit(f"    mov ({offset_lo}),a")
+        self._emit(f"    mvi a,{self._fmt_imm((base_offset >> 8) & 0xFF)}")
+        self._emit("    aci a,0x00")
+        self._emit(f"    mov ({offset_hi}),a")
+        self._emit(f"    mov a,({value_tmp})")
+        self._emit(f"    mov ({value_slot}),a")
+        self._ensure_cart_ram_api_signature("scv_cart_ram_write")
+        self._emit("    call fn_scv_cart_ram_write")
 
     def _get_array_struct_size(self, array_alias: str, array_name: str) -> int:
         """Get the struct size for an array-of-structs."""
@@ -5969,9 +6490,118 @@ def emit_cart_package(
 
     manifest_path = package_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    mame_softlist = emit_mame_softlist_package(emitter, output_file, package_dir, assembled.image)
+    if mame_softlist is not None:
+        manifest["mame_softlist"] = mame_softlist
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return {
         "manifest_path": manifest_path,
         "manifest": manifest,
+    }
+
+
+def _title_from_stem(stem: str) -> str:
+    text = stem.replace("_", " ").replace("-", " ").strip()
+    if not text:
+        return "SCV Homebrew"
+    return " ".join(part.capitalize() for part in text.split())
+
+
+def _get_mame_softlist_board(metadata: Dict[str, object]) -> Optional[Dict[str, object]]:
+    profile = str(metadata.get("profile", ""))
+    if profile in {"flat32", "flat32_ram4k", "flat32_ram4k_battery"}:
+        board: Dict[str, object] = {
+            "slot": "rom32k",
+            "rom_size": 0x8000,
+        }
+        if profile in {"flat32_ram4k", "flat32_ram4k_battery"}:
+            board["slot"] = "rom32k_ram"
+            board["ram_size"] = 0x2000
+        return board
+    if profile == "banked64":
+        return {"slot": "rom64k", "rom_size": 0x10000}
+    if profile == "banked128":
+        return {"slot": "rom128k", "rom_size": 0x20000}
+    return None
+
+
+def emit_mame_softlist_package(
+    emitter: L7801L65Emitter,
+    output_file: Path,
+    package_dir: Path,
+    rom_image: bytes,
+) -> Optional[Dict[str, object]]:
+    metadata = emitter.get_cart_metadata()
+    board = _get_mame_softlist_board(metadata)
+    if board is None:
+        return None
+
+    stem = output_file.stem
+    software_name = re.sub(r"[^a-z0-9_]+", "_", stem.lower()).strip("_") or "scvhome"
+    description = _title_from_stem(stem)
+    rom_member_name = f"{software_name}.bin"
+    crc32 = f"{binascii.crc32(rom_image) & 0xFFFFFFFF:08x}"
+    sha1 = hashlib.sha1(rom_image).hexdigest()
+
+    mame_root = package_dir / "mame"
+    hash_dir = mame_root / "hash"
+    software_dir = mame_root / "scv"
+    hash_dir.mkdir(parents=True, exist_ok=True)
+    software_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_path = software_dir / f"{software_name}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        zip_file.writestr(rom_member_name, rom_image)
+
+    xml_lines = [
+        "<?xml version=\"1.0\"?>",
+        "<!DOCTYPE softwarelist SYSTEM \"softwarelist.dtd\">",
+        "<softwarelist name=\"scv\" description=\"SCV homebrew cartridges\">",
+        f"\t<software name=\"{xml_escape(software_name)}\">",
+        f"\t\t<description>{xml_escape(description)}</description>",
+        "\t\t<year>2026</year>",
+        "\t\t<publisher>Homebrew</publisher>",
+        "\t\t<part name=\"cart\" interface=\"scv_cart\">",
+        f"\t\t\t<feature name=\"slot\" value=\"{board['slot']}\"/>",
+        f"\t\t\t<dataarea name=\"rom\" size=\"0x{int(board['rom_size']):X}\">",
+        (
+            f"\t\t\t\t<rom name=\"{xml_escape(rom_member_name)}\" size=\"0x{len(rom_image):X}\" "
+            f"crc=\"{crc32}\" sha1=\"{sha1}\"/>"
+        ),
+        "\t\t\t</dataarea>",
+    ]
+    ram_size = board.get("ram_size")
+    if ram_size:
+        xml_lines.append(f"\t\t\t<dataarea name=\"ram\" size=\"0x{int(ram_size):X}\"/>")
+    xml_lines.extend(
+        [
+            "\t\t</part>",
+            "\t</software>",
+            "</softwarelist>",
+            "",
+        ]
+    )
+
+    softlist_path = hash_dir / "scv.xml"
+    softlist_path.write_text("\n".join(xml_lines), encoding="utf-8")
+
+    run_command = (
+        f"mame -hashpath {hash_dir} -rompath {mame_root} scv {software_name}"
+    )
+    notes: List[str] = []
+    if metadata.get("profile") in {"flat32_ram4k", "flat32_ram4k_battery"}:
+        notes.append(
+            "MAME exposes Dragon Slayer style RAM carts as rom32k_ram with an 8K RAM region; the SDK API still targets the lower 4K window at 0xE000-0xEFFF."
+        )
+
+    return {
+        "software_name": software_name,
+        "description": description,
+        "hash_path": str(softlist_path.relative_to(package_dir)),
+        "zip_path": str(zip_path.relative_to(package_dir)),
+        "slot": board["slot"],
+        "run_command": run_command,
+        "notes": notes,
     }
 
 

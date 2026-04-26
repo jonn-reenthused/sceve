@@ -297,6 +297,48 @@ extern int scv_bios_sub16_hi(int de_hi, int de_lo, int hl_hi, int hl_lo);
 extern void scv_cart_select_bank(int bank_id);
 extern void scv_cart_restore_bank(void);
 
+/* ----------------------------------------------------------------
+ * Cartridge RAM window helpers
+ * Some SCV cartridges expose extra RAM in the cartridge address space for
+ * gameplay state or battery-backed saves. Dragon Slayer evidence points to a
+ * fixed 4K window at 0xE000-0xEFFF.
+ *
+ * These APIs address that window by offset from the configured cart-RAM base,
+ * not by absolute CPU address. For example, offset_hi=0x00, offset_lo=0x10
+ * addresses base+0x0010.
+ *
+ * Current converter profiles for this class of cartridge are:
+ *   - flat32_ram4k
+ *   - flat32_ram4k_battery
+ *
+ * The converter also recognises a named source pragma for simple persistent
+ * globals:
+ *   #pragma scv_cart_ram_data(0x00, 0x20) save_bytes
+ *   unsigned char save_bytes[16];
+ *   #pragma scv_cart_ram_data(0x00, 0x40) save_flag
+ *   unsigned char save_flag;
+ *
+ * Current pragma support is limited to global non-const byte scalars and 1D
+ * byte arrays. These declarations do not have normal internal-RAM addresses;
+ * accesses are lowered through the cart RAM helpers below.
+ *
+ * copy_to accepts a ROM or RAM source array identifier.
+ * copy_from accepts a RAM destination array identifier.
+ * read16/write16 use little-endian layout: low byte at offset, high byte at
+ * offset+1. The read16 helpers return each byte separately because the SDK's
+ * C subset is still 8-bit register-return oriented.
+ * byte_count is 8-bit, so use scv_cart_ram_clear() for full-window erase.
+ * ---------------------------------------------------------------- */
+extern void scv_cart_ram_clear(void);
+extern int scv_cart_ram_read(int offset_hi, int offset_lo);
+extern void scv_cart_ram_write(int offset_hi, int offset_lo, int value);
+extern int scv_cart_ram_read16_lo(int offset_hi, int offset_lo);
+extern int scv_cart_ram_read16_hi(int offset_hi, int offset_lo);
+extern void scv_cart_ram_write16(int offset_hi, int offset_lo, int value_lo, int value_hi);
+extern void scv_cart_ram_fill(int offset_hi, int offset_lo, int byte_count, int value);
+extern void scv_cart_ram_copy_to(int offset_hi, int offset_lo, char *src_array, int byte_count);
+extern void scv_cart_ram_copy_from(int offset_hi, int offset_lo, char *dst_array, int byte_count);
+
 /* Compatibility aliases recognised by the converter. */
 extern int scv_bios_add16(int de_hi, int de_lo, int hl_hi, int hl_lo);
 extern int scv_bios_sub16(int de_hi, int de_lo, int hl_hi, int hl_lo);

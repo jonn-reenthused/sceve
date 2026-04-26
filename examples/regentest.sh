@@ -5,13 +5,24 @@ PYTHON_BIN=${PYTHON_BIN:-python3}
 CONVERTER=../tools/c_to_l7801.py
 ASSEMBLER=../tools/asm7801.py
 
-rm -f ./*.bin ./*.l7801
+rm -f ./*.bin ./*.l7801 ./*.cart.json
+rm -rf ./demo_banked_regentest
 
 build_demo() {
 	input="$1"
 	output="${input%.c}.l7801"
 	"$PYTHON_BIN" "$CONVERTER" "$input" -o "$output"
 	"$PYTHON_BIN" "$ASSEMBLER" "$output"
+}
+
+build_banked_demo() {
+	input="$1"
+	output="${input%.c}.l7801"
+	package_dir="${input%.c}"
+	"$PYTHON_BIN" "$CONVERTER" "$input" -o "$output" --emit-cart-package
+	"$PYTHON_BIN" "$ASSEMBLER" "$output"
+	[ -f "${output%.l7801}.cart.json" ]
+	[ -f "$package_dir/manifest.json" ]
 }
 
 build_demo ./game_demo.c
@@ -31,5 +42,11 @@ build_demo ./scv_const_array_test.c
 build_demo ./scv_const_array_index_test.c
 build_demo ./input_probe.c
 build_demo ./input_probe_full.c
+build_banked_demo ./demo_banked_regentest.c
+
+build_banked_demo ./demo_cart_ram.c
+build_banked_demo ./demo_cart_ram_battery.c
+build_banked_demo ./demo_cart_ram_pragma.c
+build_banked_demo ./demo_call_arg_regression.c
 
 ls -1 ./*.bin
