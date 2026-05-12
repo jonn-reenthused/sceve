@@ -26,7 +26,9 @@ So i've very quickly implemented some functions, text, graphics and sound.  None
 You need pycparser installed for the actual c_to_l7801.py converter
 For the graphics converters you'll need Pillow installed
 
-The parser has now moved beyond l7801.  To implement a couple of functions I had to use some opcodes that aren't available in it, or at least don't seem to encode correctly. But I have now made two projects using the included assembler and its been fine.
+~~The parser has now moved beyond l7801.  To implement a couple of functions I had to use some opcodes that aren't available in it, or at least don't seem to encode correctly. But I have now made two projects using the included assembler and its been fine.~~
+
+I've tried to recreate the l7801 failure and i've been unable to, I suspect it was a bug in my token validator that I fixed when looking at a different bug. So feel free to use l7801, it looks like it works great still, i've tested it with the existing examples.
 
 ## How to use it
 There are numerous examples, but they've kind of evolved with the project, so some of them do things a bit differently.  game_demo.c *should* be pretty up to date with stuff.
@@ -37,7 +39,7 @@ Basically I concentrated on stuff that I knew I used for Jurl.
 
 More information in the tools folder.
 
-But basically, create a c file, run it through c_to_l7801.py and (if that works) run the resultant .l7801 file through asm7801.  That should get you a bin file that can be run on an SCV or an emulator.
+But basically, create a c file, run it through c_to_l7801.py and (if that works) run the resultant .l7801 file through asm7801 or l7801.  That should get you a bin file that can be run on an SCV or an emulator.
 
 I should also add that i've NEVER tested this on an actual SCV. I should build a cartridge at some point.
 
